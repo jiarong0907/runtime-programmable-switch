@@ -43,8 +43,8 @@ sudo make install
 sudo ldconfig  # refresh shared library cache.
 cd ..
 
-git clone git@github.com:alex1230608/runtime-bmv2.git
-cd runtime-bmv2
+git clone git@github.com:jiarong0907/runtime-programmable-switch.git
+cd runtime-programmable-switch
 bash travis/install-thrift.sh
 bash travis/install-nanomsg.sh
 bash travis/install-nnpy.sh
@@ -68,7 +68,7 @@ sudo ldconfig
 cd ../../
 ```
 
-Then, you should be able to run examples under the folder `runtime-bmv2/runtime_examples/`. See below for more details.
+Then, you should be able to run examples under the folder `runtime-programmable-switch/runtime_examples/`. See below for more details.
 
 ## Use our VM
 
