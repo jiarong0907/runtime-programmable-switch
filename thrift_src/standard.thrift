@@ -89,6 +89,13 @@ struct BmMeterRateConfig {
   2:i32 burst_size;
 }
 
+enum RuntimeReconfigOperationErrorCode {
+  INVALID_JSON_FORMAT = 1,
+  INVALID_JSON_PATH = 2,
+  INVALID_PLAN_PATH = 3,
+  UNKNOWN = 4
+}
+
 enum TableOperationErrorCode {
   TABLE_FULL = 1,
   INVALID_HANDLE = 2,
@@ -117,6 +124,10 @@ enum TableOperationErrorCode {
   IMMUTABLE_TABLE_ENTRIES = 25,
   BAD_ACTION_DATA = 26,
   ERROR = 100,
+}
+
+exception InvalidRuntimeReconfigOperation {
+  1:RuntimeReconfigOperationErrorCode code
 }
 
 exception InvalidTableOperation {
@@ -323,6 +334,12 @@ service Standard {
     5:BmActionData action_data,
     6:BmAddEntryOptions options
   ) throws (1:InvalidTableOperation ouch),
+
+  void bm_mt_runtime_reconfig(
+    1:i32 cxt_id,
+    2:string json_file
+    3:string plan_file
+  ) throws (1:InvalidRuntimeReconfigOperation ouch),
 
   void bm_mt_set_default_action(
     1:i32 cxt_id,

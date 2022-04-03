@@ -182,6 +182,13 @@ class Context final {
                entry_handle_t *handle,
                int priority = -1  /*only used for ternary*/);
 
+  int
+  mt_runtime_reconfig(const std::string &json_file,
+                      const std::string &plan_file,
+                      LookupStructureFactory *lookup_factory,
+                      const std::set<P4Objects::header_field_pair> &required_fields,
+                      const P4Objects::ForceArith &arith_objects);
+
   MatchErrorCode
   mt_set_default_action(const std::string &table_name,
                         const std::string &action_name,
@@ -499,6 +506,7 @@ class Context final {
 
   std::shared_ptr<P4Objects> p4objects{nullptr};
   std::shared_ptr<P4Objects> p4objects_rt{nullptr};
+  std::shared_ptr<P4Objects> p4objects_new{nullptr};
 
   std::unordered_map<std::type_index, std::shared_ptr<void> > components{};
 

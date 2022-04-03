@@ -738,6 +738,13 @@ class ParseSwitchCase : public ParseSwitchCaseIface {
   bool match(const ByteContainer &input,
              const ParseState **state) const override;
 
+  const ParseState *get_next_state() const {
+    return next_state;
+  }
+  void set_next_state(const ParseState *_next_state) {
+    next_state = _next_state;
+  }
+
  private:
   ByteContainer key;
   const ParseState *next_state; /* NULL if end */
@@ -773,6 +780,13 @@ class ParseSwitchCaseWithMask : public ParseSwitchCaseIface {
 
   bool match(const ByteContainer &input,
              const ParseState **state) const override;
+
+  const ParseState *get_next_state() const {
+    return next_state;
+  }
+  void set_next_state(const ParseState *_next_state) {
+    next_state = _next_state;
+  }
 
  private:
   void mask_key();
@@ -816,6 +830,13 @@ class ParseSwitchCaseVSet : public ParseSwitchCaseIface {
       return true;
     }
     return false;
+  }
+
+  const ParseState *get_next_state() const {
+    return next_state;
+  }
+  void set_next_state(const ParseState *_next_state) {
+    next_state = _next_state;
   }
 
  private:

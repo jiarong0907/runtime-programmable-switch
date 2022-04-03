@@ -237,6 +237,29 @@ public:
     return entry_handle;
   }
 
+  void bm_mt_runtime_reconfig(const int32_t cxt_id, const std::string& json_file, const std::string& plan_file) {
+    Logger::get()->trace("bm_runtime_reconfig");
+    int error_code = switch_->mt_runtime_reconfig(cxt_id, json_file, plan_file);
+    if(error_code != 0) {
+      InvalidRuntimeReconfigOperation irro;
+      switch (error_code) {
+        case 1: 
+          irro.code = RuntimeReconfigOperationErrorCode::INVALID_JSON_FORMAT;
+          break;
+        case 2:
+          irro.code = RuntimeReconfigOperationErrorCode::INVALID_JSON_PATH;
+          break;
+        case 3:
+          irro.code = RuntimeReconfigOperationErrorCode::INVALID_PLAN_PATH;
+          break;
+        default:
+          irro.code = RuntimeReconfigOperationErrorCode::UNKNOWN;
+	  break;
+      }
+      throw irro;
+    }
+  }
+
   void bm_mt_set_default_action(const int32_t cxt_id, const std::string& table_name, const std::string& action_name, const BmActionData& action_data) {
     Logger::get()->trace("bm_set_default_action");
     ActionData data;

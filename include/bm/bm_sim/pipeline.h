@@ -55,6 +55,10 @@ class Pipeline : public NamedP4Object {
   //! Default move assignment operator
   Pipeline &operator=(Pipeline &&other) /*noexcept*/ = default;
 
+  void set_first_node(ControlFlowNode *_first_node) {
+    first_node = _first_node;
+  }
+
  private:
   ControlFlowNode *first_node;
 };

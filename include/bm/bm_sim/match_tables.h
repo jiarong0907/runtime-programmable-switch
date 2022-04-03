@@ -107,6 +107,14 @@ class MatchTableAbstract : public NamedP4Object {
   };
 
  public:
+  bool get_with_ageing() const {return with_ageing; }
+  std::unordered_map<p4object_id_t, const ControlFlowNode *> get_next_nodes() 
+    { return next_nodes; }
+  const ControlFlowNode * get_next_node_hit() { return next_node_hit; }
+  const ControlFlowNode * get_next_node_miss() { return next_node_miss; }
+  bool get_has_next_node_hit() { return has_next_node_hit; }
+  bool get_has_next_node_miss() { return has_next_node_miss; }
+
   MatchTableAbstract(const std::string &name, p4object_id_t id,
                      bool with_counters, bool with_ageing,
                      MatchUnitAbstract_ *mu);

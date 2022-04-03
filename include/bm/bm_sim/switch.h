@@ -826,6 +826,16 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
       cxt_id_t cxt_id, const std::string &calc_name,
       const CustomCrcMgr<uint32_t>::crc_config_t &crc32_config) override;
 
+  int
+  mt_runtime_reconfig(cxt_id_t cxt_id,
+                      const std::string &json_file,
+                      const std::string &plan_file) {
+    return contexts.at(cxt_id).mt_runtime_reconfig(json_file, plan_file,
+                                                   get_lookup_factory(),
+                                                   required_fields,
+						   arith_objects);
+  }
+
   // ---------- End RuntimeInterface ----------
 
  protected:

@@ -50,12 +50,14 @@
 #include "control_action.h"
 #include "device_id.h"
 
-// forward declaration of Json::Value
-namespace Json {
+#include "jsoncpp/json.h"
 
-class Value;
-
-}  // namespace Json
+// // forward declaration of Json::Value
+// namespace Json {
+// 
+// class Value;
+// 
+// }  // namespace Json
 
 namespace bm {
 
@@ -169,6 +171,10 @@ class P4Objects {
 
   Parser *get_parser_rt(const std::string &name) const;
 
+  ParseState *get_parse_state(const std::string &parser_name, const std::string &name) const;
+
+  ParseState *get_parse_state_rt(const std::string &parser_name, const std::string &name) const;
+
   ParseVSet *get_parse_vset(const std::string &name) const {
     return parse_vsets.at(name).get();
   }
@@ -264,6 +270,76 @@ class P4Objects {
   // "<major>.<minor>"
   static std::string get_json_version_string();
 
+  void map_json_value(const std::string &type, int id,
+      Json::Value *val);
+  void map_json_value(const std::string &type, const std::string &name,
+      Json::Value *val0, Json::Value *val1, Json::Value *val2 = nullptr);
+  void map_json_value(const std::string &type, const std::string &name,
+      Json::Value *val);
+  void add_json_value(const std::string &type, int id,
+      const Json::Value &val);
+  void add_json_value(const std::string &type, const std::string &name,
+      const Json::Value &val);
+  void remove_json_value(const std::string &type, const std::string &name);
+  template <typename T>
+  void modify_json_value(const std::string &type, const std::string &name,
+      const std::string &field_name, const T &val);
+  void modify_json_value(const std::string &type, int id,
+      const std::string &field_name, int val);
+  void modify_json_value(const std::string &type, const std::string &name,
+      const std::string &field_name, std::unordered_map<int, int> &action_id_new2comb);
+  void modify_json_value(const std::string &type, const std::string &name,
+      const std::string &field_name, const std::string &inner_field_name,
+      std::unordered_map<int, int> &action_id_new2comb);
+  void modify_json_value(const std::string &type, const std::string &name,
+      const std::string &field_name, const std::string &inner_field_name,
+      const std::string &val);
+  const Json::Value *get_json_value(const std::string &type, int id);
+  const Json::Value *get_json_value(const std::string &type, const std::string &name);
+  void prepare_flex_hdr_parser(Json::Value &cfg_root);
+  const Json::Value build_flex_json_value(int id,
+                                    const std::string &name,
+                                    const std::string &old_next_name,
+                                    const std::string &new_next_name);
+
+  const std::string insert_match_table_rt(std::shared_ptr<P4Objects> p4objects_new,
+                                          const std::string &pipeline_name,
+                                          const std::string &name,
+                                          bool use_null_next = false);
+  const std::string insert_conditional_rt(std::shared_ptr<P4Objects> p4objects_new,
+                                           const std::string &pipeline_name,
+                                           const std::string &name,
+                                           bool use_null_next = false);
+  const std::string insert_flex_rt(const std::string &pipeline_name,
+                                   const std::string &old_next_name,
+                                   const std::string &new_next_name);
+  void change_init_node_rt(const std::string &pipeline_name,
+                           const std::string &dst_node_name);
+  void change_table_next_node_rt(const std::string &pipeline_name,
+                                 const std::string &src_table_name,
+                                 const std::string &edge_name,
+                                 const std::string &dst_node_name);
+  void change_conditional_next_node_rt(const std::string &pipeline_name,
+                                       const std::string &src_conditional_name,
+                                       const std::string &edge_name,
+                                       const std::string &dst_node_name);
+  void flex_trigger_rt(bool on);
+  void delete_flex_rt(const std::string &pipeline_name,
+                      const std::string &name);
+  void delete_conditional_rt(const std::string &pipeline_name,
+                             const std::string &name);
+  void delete_match_table_rt(const std::string &pipeline_name,
+                             const std::string &name);
+  void insert_parse_state_rt(std::shared_ptr<P4Objects> p4objects_new,
+                             const std::string &parser_name,
+                             const std::string &name);
+  void change_next_state_rt(const std::string &parser_name,
+                            const std::string &src_state_name,
+                            const std::string &edge_name,
+                            const std::string &dst_state_name);
+
+  void print_cfg(std::ostream &os);
+
  private:
   // The get_*_cfg are used during json parsing: they will throw a
   // json_exception if the name cannot be resolved, which will lead to an error
@@ -315,6 +391,8 @@ class P4Objects {
   void add_match_action_table(const std::string &name,
                               std::unique_ptr<MatchActionTable> table);
 
+  void remove_match_action_table(const std::string &name);
+
   void add_action_profile(const std::string &name,
                           std::unique_ptr<ActionProfile> action_profile);
 
@@ -323,10 +401,14 @@ class P4Objects {
   void add_conditional(const std::string &name,
                        std::unique_ptr<Conditional> conditional);
 
+  void remove_conditional(const std::string &name);
+
   void add_control_action(const std::string &name,
                           std::unique_ptr<ControlAction> control_action);
 
   void add_control_node(const std::string &name, ControlFlowNode *node);
+
+  void remove_control_node(const std::string &name);
 
   ControlFlowNode *get_control_node_cfg(const std::string &name) const;
 
@@ -451,7 +533,10 @@ class P4Objects {
   // parsers
   std::unordered_map<std::string, std::unique_ptr<Parser> > parsers{};
   // this is to give the objects a place where to live
-  std::vector<std::unique_ptr<ParseState> > parse_states{};
+  // For runtime reconfig, we need a map to get a state instead of a vector
+  // std::vector<std::unique_ptr<ParseState> > parse_states{};
+  // also, the states are separatedly named in each parser
+  std::unordered_map<std::string, std::unordered_map<std::string, std::unique_ptr<ParseState>>> parse_states{};
   // this is to give ActionFn objects a place to live
   std::vector<std::unique_ptr<ActionFn> > parse_methods{};
   std::vector<std::unique_ptr<ActionFn> > deparse_methods{};
@@ -523,6 +608,26 @@ class P4Objects {
 
   std::ostream &outstream;
   bool verbose_output;
+
+  // FlexCore's runtime reconfig
+  Json::Value cfg_root;
+  int tableIdCount;
+  int actionIdCount;
+  int conditionalIdCount;
+  std::unordered_map<std::string, int> parseStateIdCount;
+  int conditionalNameMax;
+
+  ParseState *flex_init_state;
+
+  std::unordered_map<int, Json::Value*> cfg_actions_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_pipelines_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_pipeline_tables_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_pipeline_conditionals_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_tables_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_conditionals_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_parsers_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_parser_parse_states_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_parse_states_map{};
 
  private:
   int get_field_offset(header_id_t header_id,

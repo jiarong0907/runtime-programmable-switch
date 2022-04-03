@@ -104,3 +104,8 @@ VERSION-build
 
 core
 vgcore*
+
+# dependent submodules
+/nanomsg-1.0.0/
+/nnpy/
+/thrift-0.11.0/

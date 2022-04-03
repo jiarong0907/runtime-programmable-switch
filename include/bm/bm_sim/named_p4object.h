@@ -64,8 +64,14 @@ class NamedP4Object {
 
   const SourceInfo *get_source_info() const { return source_info.get(); }
 
+  void set_id(p4object_id_t _id) { id = _id; }
+
+  void set_name(const std::string &_name) { name = _name; }
+
  protected:
-  const std::string name;
+  // FlexCore: We remove const constraint on name. 
+  // TODO: is it safe?
+  std::string name;
   p4object_id_t id;
   std::unique_ptr<SourceInfo> source_info;
 };

@@ -44,6 +44,14 @@ class Conditional
     return eval_bool(phv);
   }
 
+  ControlFlowNode *get_next_node_if_true() {
+    return true_next;
+  }
+
+  ControlFlowNode *get_next_node_if_false() {
+    return false_next;
+  }
+
   void set_next_node_if_true(ControlFlowNode *next_node) {
     true_next = next_node;
   }

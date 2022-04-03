@@ -1,0 +1,18 @@
+
+======================================================================
+Welcome to the BMV2 Mininet CLI!
+======================================================================
+Your P4 program is installed into the BMV2 software switch
+and your initial configuration is loaded. You can interact
+with the network using the mininet CLI below.
+
+To inspect or change the switch configuration, connect to
+its CLI from your host operating system using this command:
+  simple_switch_CLI --thrift-port <switch thrift port>
+
+To view a switch log, run this command from your host OS:
+  tail -f /home/mininet/runtime-programmable-switch/runtime_examples/multi_tenant/app/build/logs/<switchname>.log
+
+To view the switch output pcap, check the pcap files in /home/mininet/runtime-programmable-switch/runtime_examples/multi_tenant/app/build:
+ for example run:  sudo tcpdump -xxx -r s1-eth1.pcap
+

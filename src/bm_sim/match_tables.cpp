@@ -363,7 +363,15 @@ MatchTable::lookup(const Packet &pkt, bool *hit, entry_handle_t *handle,
   *hit = res.found();
   *handle = res.handle;
   const auto &entry = (*hit) ? (*res.value) : default_entry;
-  *next_node = entry.next_node;
+  // Change for FlexCore: We don't use per-entry next node, so we always check table's next_node pointers
+  // if (*hit)
+  //   *next_node = get_next_node(entry.action_fn.get_action_id());
+  // else
+  //   *next_node = get_next_node_default(entry.action_fn.get_action_id());
+
+  // For now, we only support single next node ptr for table,
+  // so we always use miss_next_node
+  *next_node = next_node_miss;
   return entry;
 }
 
@@ -694,7 +702,12 @@ MatchTableIndirect::lookup(const Packet &pkt,
   // default_default_entry will be an empty (no-op) action unless otherwise
   // specified in the P4 / JSON
   if (!(*hit) && !default_set) {
-    *next_node = default_default_entry.next_node;
+    // Change for FlexCore: We don't use per-entry next node, so we always check table's next_node pointers
+    // *next_node = get_next_node(default_default_entry.action_fn.get_action_id());
+
+    // For now, we only support single next node ptr for table,
+    // so we always use miss_next_node
+    *next_node = next_node_miss;
     return default_default_entry;
   }
 
@@ -709,9 +722,16 @@ MatchTableIndirect::lookup(const Packet &pkt,
   // Unfortunately this has to be done at this stage and cannot be done when
   // inserting a member because for 2 match tables sharing the same action
   // profile (and therefore the same members), the next node mapping can vary
-  *next_node = (*hit) ?
-      get_next_node(entry.action_fn.get_action_id()) :
-      get_next_node_default(entry.action_fn.get_action_id());
+
+  // Change for FlexCore: We don't use per-entry next node, so we always check table's next_node pointers
+  // *next_node = (*hit) ?
+  //     get_next_node(entry.action_fn.get_action_id()) :
+  //     get_next_node_default(entry.action_fn.get_action_id());
+
+  // For now, we only support single next node ptr for table,
+  // so we always use miss_next_node
+  *next_node = next_node_miss;
+
   return entry;
 }
 

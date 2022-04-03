@@ -1,0 +1,10 @@
+insert flex ingress flx_TE0 null null
+change flex ingress flx_TE0 true_next null
+change flex ingress flx_TE0 false_next old_node_4
+change tabl ingress old_MyIngress.ipv4_lpm base_default_next flx_TE0
+trigger on
+change tabl ingress old_MyIngress.ipv4_lpm base_default_next null
+trigger off
+delete flex ingress flx_TE0
+delete tabl ingress old_MyIngress.acl
+delete flex ingress old_node_4

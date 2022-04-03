@@ -210,6 +210,8 @@ class ParseSwitchCaseIface {
 
   virtual bool match(const ByteContainer &input,
                      const ParseState **state) const = 0;
+  virtual const ParseState *get_next_state() const = 0;
+  virtual void set_next_state(const ParseState *_next_state) = 0;
 
   static std::unique_ptr<ParseSwitchCaseIface>
   make_case(const ByteContainer &key, const ParseState *next_state);
@@ -291,6 +293,14 @@ class ParseState : public NamedP4Object {
 
   void set_default_switch_case(const ParseState *default_next);
 
+  const ParseState *get_default_next_state() const{
+    return default_next_state;
+  }
+
+  const std::vector<std::unique_ptr<ParseSwitchCaseIface>> &get_switch_cases() const {
+    return parser_switch;
+  }
+
   int expected_switch_case_key_size() const;
 
   // Copy constructor
@@ -318,6 +328,11 @@ class ParseState : public NamedP4Object {
   ParseSwitchKeyBuilder key_builder{};
   std::vector<std::unique_ptr<ParseSwitchCaseIface> > parser_switch{};
   const ParseState *default_next_state{nullptr};
+
+ public:
+  ParserOp *get_parser_op(int idx) {
+    return parser_ops[idx].get();
+  }
 };
 
 //! Implements a P4 parser.

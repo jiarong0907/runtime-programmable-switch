@@ -33,7 +33,6 @@
 #include <unordered_set>
 #include <exception>
 
-#include "jsoncpp/json.h"
 #include "crc_map.h"
 
 namespace bm {
@@ -580,6 +579,18 @@ void add_new_object(std::unordered_map<std::string, T> *map,
 }
 
 template <typename T>
+void remove_object(std::unordered_map<std::string, T> *map,
+                   const std::string &type_name,
+                   const std::string &name) {
+  int removed = map->erase(name);
+  if (removed == 0) {
+    throw json_exception(
+        EFormat() << "No objects of type '" << type_name
+                  << "' with name '" << name << "'");
+  }
+}
+
+template <typename T>
 const T &get_object(const std::unordered_map<std::string, T> &map,
                     const std::string &type_name,
                     const std::string &name) {
@@ -693,6 +704,8 @@ P4Objects::init_headers(const Json::Value &cfg_root) {
     phv_factory.push_back_header(header_name, header_id,
                                  *header_type, metadata);
     phv_factory.disable_all_field_arith(header_id);
+    // Added by FlexCore: For now, we assume all fields are initialized to enable arith
+    enable_arith(header_id);
     add_header_id(header_name, header_id);
   }
 }
@@ -901,6 +914,22 @@ P4Objects::init_errors(const Json::Value &cfg_root) {
 
 void
 P4Objects::init_parsers(const Json::Value &cfg_root, InitState *init_state) {
+
+  {
+    // create map for updating json for runtime_CLI
+    Json::Value &cfg_parsers = this->cfg_root["parsers"];
+    for (auto &cfg_parser : cfg_parsers) {
+      const string parser_name = cfg_parser["name"].asString();
+      parseStateIdCount[parser_name] = 0;
+      auto &cfg_parse_states = cfg_parser["parse_states"];
+      map_json_value("parser", parser_name, &cfg_parser, &cfg_parse_states);
+      for (auto &cfg_parse_state : cfg_parse_states) {
+        const string parse_state_name = cfg_parse_state["name"].asString();
+        map_json_value(parser_name+" parse state", parse_state_name, &cfg_parse_state);
+      }
+    }
+  }
+
   auto &header_union_stack_to_type_map =
       init_state->header_union_stack_to_type_map;
 
@@ -914,7 +943,8 @@ P4Objects::init_parsers(const Json::Value &cfg_root, InitState *init_state) {
     std::unique_ptr<Parser> parser(
         new Parser(parser_name, parser_id, &error_codes));
 
-    std::unordered_map<string, ParseState *> current_parse_states;
+    std::unordered_map<string, std::unique_ptr<ParseState>> &current_parse_states
+        = parse_states[parser_name];
     DupIdChecker dup_id_checker_states("parse state");
 
     // parse states
@@ -927,6 +957,10 @@ P4Objects::init_parsers(const Json::Value &cfg_root, InitState *init_state) {
       // p4object_id_t parse_state_id = cfg_parse_state["id"].asInt();
       std::unique_ptr<ParseState> parse_state(
           new ParseState(parse_state_name, id));
+
+      if (parse_state_name == "flex_start") {
+        flex_init_state = parse_state.get();
+      }
 
       const Json::Value &cfg_parser_ops = cfg_parse_state["parser_ops"];
       for (const auto &cfg_parser_op : cfg_parser_ops) {
@@ -1186,14 +1220,14 @@ P4Objects::init_parsers(const Json::Value &cfg_root, InitState *init_state) {
       if (cfg_transition_key.size() > 0u)
         parse_state->set_key_builder(key_builder);
 
-      add_new_object(&current_parse_states, "parse state", parse_state_name,
-                     parse_state.get());
-      parse_states.push_back(std::move(parse_state));
+      add_new_object(&current_parse_states, parser_name + " parse state", parse_state_name,
+                     std::move(parse_state));
+      // parse_states.push_back(std::move(parse_state));
     }
 
     for (const auto &cfg_parse_state : cfg_parse_states) {
       const string parse_state_name = cfg_parse_state["name"].asString();
-      ParseState *parse_state = current_parse_states[parse_state_name];
+      ParseState *parse_state = current_parse_states[parse_state_name].get();
       auto expected_transition_value_size = static_cast<size_t>(
           parse_state->expected_switch_case_key_size());
       const Json::Value &cfg_transitions = cfg_parse_state["transitions"];
@@ -1208,7 +1242,7 @@ P4Objects::init_parsers(const Json::Value &cfg_root, InitState *init_state) {
         }
 
         const string next_state_name = cfg_transition["next_state"].asString();
-        const ParseState *next_state = current_parse_states[next_state_name];
+        const ParseState *next_state = current_parse_states[next_state_name].get();
 
         if (type == "default") {
           parse_state->set_default_switch_case(next_state);
@@ -1263,7 +1297,7 @@ P4Objects::init_parsers(const Json::Value &cfg_root, InitState *init_state) {
     }
 
     const string init_state_name = cfg_parser["init_state"].asString();
-    const ParseState *init_state = current_parse_states[init_state_name];
+    const ParseState *init_state = current_parse_states[init_state_name].get();
     parser->set_init_state(init_state);
 
     add_parser(parser_name, std::move(parser));
@@ -1423,6 +1457,16 @@ P4Objects::init_register_arrays(const Json::Value &cfg_root) {
 
 void
 P4Objects::init_actions(const Json::Value &cfg_root) {
+
+  {
+    // create map for updating json for runtime_CLI
+    Json::Value &cfg_actions = this->cfg_root["actions"];
+    for (auto &cfg_action : cfg_actions) {
+      p4object_id_t action_id = cfg_action["id"].asInt();
+      map_json_value("action", action_id, &cfg_action);
+    }
+  }
+
   DupIdChecker dup_id_checker("action");
   const Json::Value &cfg_actions = cfg_root["actions"];
   for (const auto &cfg_action : cfg_actions) {
@@ -1567,6 +1611,27 @@ void
 P4Objects::init_pipelines(const Json::Value &cfg_root,
                           LookupStructureFactory *lookup_factory,
                           InitState *init_state) {
+
+  {
+    // create map for updating json for runtime_CLI
+    Json::Value &cfg_pipelines = this->cfg_root["pipelines"];
+    for (auto &cfg_pipeline : cfg_pipelines) {
+      const string pipeline_name = cfg_pipeline["name"].asString();
+      auto &cfg_tables = cfg_pipeline["tables"];
+      auto &cfg_conditionals = cfg_pipeline["conditionals"];
+      map_json_value("pipeline", pipeline_name, &cfg_pipeline, &cfg_tables, &cfg_conditionals);
+      for (auto &cfg_table : cfg_tables) {
+        const string table_name = cfg_table["name"].asString();
+        map_json_value(pipeline_name+" table", table_name, &cfg_table);
+      }
+      for (auto &cfg_conditional : cfg_conditionals) {
+        const string conditional_name = cfg_conditional["name"].asString();
+        map_json_value(pipeline_name+" conditional", conditional_name, &cfg_conditional);
+      }
+    }
+  }
+
+
   auto &direct_meters = init_state->direct_meters;
 
   DupIdChecker dup_id_checker("pipeline");
@@ -1750,6 +1815,8 @@ P4Objects::init_pipelines(const Json::Value &cfg_root,
       dup_id_checker_condition.add(conditional_id);
       auto conditional = new Conditional(
         conditional_name, conditional_id, object_source_info(cfg_conditional));
+      int nameNum = stoi(conditional_name.substr(5));
+      conditionalNameMax = nameNum > conditionalNameMax ? nameNum : conditionalNameMax;
       const auto &cfg_expression = cfg_conditional["expression"];
       build_expression(cfg_expression, conditional);
       conditional->build();
@@ -2119,8 +2186,18 @@ P4Objects::init_objects(std::istream *is,
                         std::shared_ptr<TransportIface> notifications_transport,
                         const std::set<header_field_pair> &required_fields,
                         const ForceArith &arith_objects) {
+  tableIdCount = 0;
+  actionIdCount = 0;
+  conditionalIdCount = 0;
+  conditionalNameMax = 0;
   Json::Value cfg_root;
   (*is) >> cfg_root;
+
+  prepare_flex_hdr_parser(cfg_root);
+
+  this->cfg_root = cfg_root;
+
+  // print_cfg(std::cout);
 
   if (!notifications_transport) {
     this->notifications_transport = std::shared_ptr<TransportIface>(
@@ -2194,6 +2271,7 @@ P4Objects::init_objects(std::istream *is,
     init_learn_lists(cfg_root);
 
     init_field_lists(cfg_root);
+
 
     // invoke init() for extern instances, we do this at the very end in case
     // init() looks up some object (e.g. RegisterArray) in P4Objects
@@ -2510,6 +2588,1060 @@ P4Objects::get_action_for_action_profile(
   return aprof_actions_map.at(std::make_pair(act_prof_name, action_name));
 }
 
+void
+P4Objects::map_json_value(const std::string &type, int id,
+    Json::Value *val) {
+  if (type == "action") {
+    if (cfg_actions_map.find(id) != cfg_actions_map.end()) {
+      std::cout << "map_json_value: duplicated action id: " << id << std::endl;
+    } else {
+      cfg_actions_map[id] = val;
+    }
+  } else {
+    std::cout << "map_json_value: type not supported" << std::endl;
+  }
+}
+void
+P4Objects::map_json_value(const std::string &type, const std::string &name,
+    Json::Value *val0, Json::Value *val1, Json::Value *val2) {
+  if (type == "pipeline") {
+    if (cfg_pipelines_map.find(name) != cfg_pipelines_map.end()) {
+      std::cout << "map_json_value: duplicated pipeline name: " << name << std::endl;
+    } else {
+      cfg_pipelines_map[name] = val0;
+      cfg_pipeline_tables_map[name] = val1;
+      cfg_pipeline_conditionals_map[name] = val2;
+    }
+  } else if (type == "parser") {
+    if (cfg_parsers_map.find(name) != cfg_parsers_map.end()) {
+      std::cout << "map_json_value: duplicated parser name: " << name << std::endl;
+    } else {
+      cfg_parsers_map[name] = val0;
+      cfg_parser_parse_states_map[name] = val1;
+    }
+  } else {
+    std::cout << "map_json_value: type not supported" << std::endl;
+  }
+}
+void
+P4Objects::map_json_value(const std::string &type, const std::string &name,
+    Json::Value *val) {
+  if (type.substr(type.length()-5, 5) == "table") {
+    const string &pipeline_name = type.substr(0, type.length()-6);
+    const string &cfg_table_id = pipeline_name + " " + name;
+    if (cfg_tables_map.find(cfg_table_id) != cfg_tables_map.end()) {
+      std::cout << "map_json_value: duplicated table name: " << cfg_table_id << std::endl;
+    } else {
+      cfg_tables_map[cfg_table_id] = val;
+    }
+  } else if (type.substr(type.length()-11, 11) == "conditional") {
+    const string &pipeline_name = type.substr(0, type.length()-12);
+    const string &cfg_conditional_id = pipeline_name + " " + name;
+    if (cfg_conditionals_map.find(cfg_conditional_id) != cfg_conditionals_map.end()) {
+      std::cout << "map_json_value: duplicated conditional name: " << cfg_conditional_id << std::endl;
+    } else {
+      cfg_conditionals_map[cfg_conditional_id] = val;
+    }
+  } else if (type.substr(type.length()-11, 11) == "parse state") {
+    const string &parser_name = type.substr(0, type.length()-12);
+    const string &cfg_parse_state_id = parser_name + " " + name;
+    if (cfg_parse_states_map.find(cfg_parse_state_id) != cfg_parse_states_map.end()) {
+      std::cout << "map_json_value: duplicated parse_state name: " << cfg_parse_state_id << std::endl;
+    } else {
+      cfg_parse_states_map[cfg_parse_state_id] = val;
+    }
+  } else {
+    std::cout << "map_json_value: type not supported" << std::endl;
+  }
+}
+void
+P4Objects::add_json_value(const std::string &type, int id,
+    const Json::Value &val) {
+  if (type == "action") {
+    if (cfg_actions_map.find(id) != cfg_actions_map.end()) {
+      std::cout << "add_json_value: duplicated action id: " << id << std::endl;
+    } else {
+      Json::Value &added = cfg_root["actions"].append(val);
+      map_json_value("action", id, &added);
+    }
+  } else {
+    std::cout << "add_json_value: type not supported" << std::endl;
+  }
+}
+void
+P4Objects::add_json_value(const std::string &type, const std::string &name,
+    const Json::Value &val) {
+  if (type.substr(type.length()-5, 5) == "table") {
+    const string &pipeline_name = type.substr(0, type.length()-6);
+    const string &cfg_table_id = pipeline_name + " " + name;
+    if (cfg_tables_map.find(cfg_table_id) != cfg_tables_map.end()) {
+      std::cout << "add_json_value: duplicated table name: " << cfg_table_id << std::endl;
+    } else {
+      Json::Value &added = cfg_pipeline_tables_map[pipeline_name]->append(val);
+      map_json_value(pipeline_name+" table", name, &added);
+    }
+  } else if (type.substr(type.length()-11, 11) == "conditional") {
+    const string &pipeline_name = type.substr(0, type.length()-12);
+    const string &cfg_conditional_id = pipeline_name + " " + name;
+    if (cfg_conditionals_map.find(cfg_conditional_id) != cfg_conditionals_map.end()) {
+      std::cout << "add_json_value: duplicated conditional name: " << cfg_conditional_id << std::endl;
+    } else {
+      Json::Value &added = cfg_pipeline_conditionals_map[pipeline_name]->append(val);
+      map_json_value(pipeline_name+" conditional", name, &added);
+    }
+  } else if (type.substr(type.length()-11, 11) == "parse state") {
+    const string &parser_name = type.substr(0, type.length()-12);
+    const string &cfg_parse_state_id = parser_name + " " + name;
+    if (cfg_parse_states_map.find(cfg_parse_state_id) != cfg_parse_states_map.end()) {
+      std::cout << "add_json_value: duplicated parse_state name: " << cfg_parse_state_id << std::endl;
+    } else {
+      Json::Value &added = cfg_parser_parse_states_map[parser_name]->append(val);
+      map_json_value(parser_name+" parse state", name, &added);
+    }
+  } else {
+    std::cout << "add_json_value: type not supported" << std::endl;
+  }
+}
+void
+P4Objects::remove_json_value(const std::string &type, const std::string &name) {
+  if (type.substr(type.length()-5, 5) == "table") {
+    const string &pipeline_name = type.substr(0, type.length()-6);
+    const string &cfg_table_id = pipeline_name + " " + name;
+    if (cfg_tables_map.find(cfg_table_id) == cfg_tables_map.end()) {
+      std::cout << "remove_json_value: no table name: " << cfg_table_id << std::endl;
+    } else {
+      Json::Value newArray = Json::arrayValue;
+      for (const auto &cfg_table : *(cfg_pipeline_tables_map[pipeline_name])) {
+        if (cfg_table["name"] != name) {
+          newArray.append(cfg_table);
+        }
+      }
+      (*cfg_pipeline_tables_map[pipeline_name]) = newArray;
+    }
+  } else if (type.substr(type.length()-11, 11) == "conditional") {
+    const string &pipeline_name = type.substr(0, type.length()-12);
+    const string &cfg_conditional_id = pipeline_name + " " + name;
+    if (cfg_conditionals_map.find(cfg_conditional_id) == cfg_conditionals_map.end()) {
+      std::cout << "remove_json_value: no conditional name: " << cfg_conditional_id << std::endl;
+    } else {
+      Json::Value newArray = Json::arrayValue;
+      for (const auto &cfg_conditional : *(cfg_pipeline_conditionals_map[pipeline_name])) {
+        if (cfg_conditional["name"] != name) {
+          newArray.append(cfg_conditional);
+        }
+      }
+      (*cfg_pipeline_conditionals_map[pipeline_name]) = newArray;
+    }
+  } else {
+    std::cout << "remove_json_value: type not supported" << std::endl;
+  }
+}
+template <typename T>
+void
+P4Objects::modify_json_value(const std::string &type, const std::string &name,
+    const std::string &field_name, const T &val) {
+  if (type == "pipeline") {
+    if (cfg_pipelines_map.find(name) == cfg_pipelines_map.end()) {
+      std::cout << "modify_json_value: cannot find pipeline name: " << name << std::endl;
+    } else {
+      (*cfg_pipelines_map[name])[field_name] = val;
+    }
+  } else if (type.substr(type.length()-5, 5) == "table") {
+    const string &pipeline_name = type.substr(0, type.length()-6);
+    const string &cfg_table_id = pipeline_name + " " + name;
+    if (cfg_tables_map.find(cfg_table_id) == cfg_tables_map.end()) {
+      std::cout << "modify_json_value: cannot find table name: " << cfg_table_id << std::endl;
+    } else {
+      (*cfg_tables_map[cfg_table_id])[field_name] = val;
+    }
+  } else if (type.substr(type.length()-11, 11) == "conditional") {
+    const string &pipeline_name = type.substr(0, type.length()-12);
+    const string &cfg_conditional_id = pipeline_name + " " + name;
+    if (cfg_conditionals_map.find(cfg_conditional_id) == cfg_conditionals_map.end()) {
+      std::cout << "modify_json_value: cannot find conditional name: " << cfg_conditional_id << std::endl;
+    } else {
+      (*cfg_conditionals_map[cfg_conditional_id])[field_name] = val;
+    }
+  } else if (type.substr(type.length()-11, 11) == "parse state") {
+    const string &parser_name = type.substr(0, type.length()-12);
+    const string &cfg_parse_state_id = parser_name + " " + name;
+    if (cfg_parse_states_map.find(cfg_parse_state_id) == cfg_parse_states_map.end()) {
+      std::cout << "modify_json_value: cannot find parse_state name: " << cfg_parse_state_id << std::endl;
+    } else {
+      (*cfg_parse_states_map[cfg_parse_state_id])[field_name] = val;
+    }
+  } else {
+    std::cout << "modify_json_value: type not supported" << std::endl;
+  }
+}
+void
+P4Objects::modify_json_value(const std::string &type, int id,
+    const std::string &field_name, int val) {
+  if (type == "action") {
+    if (cfg_actions_map.find(id) == cfg_actions_map.end()) {
+      std::cout << "modify_json_value: cannot find action id: " << id << std::endl;
+    } else {
+      (*cfg_actions_map[id])[field_name] = val;
+    }
+  } else {
+    std::cout << "modify_json_value: type not supported" << std::endl;
+  }
+
+}
+void
+P4Objects::modify_json_value(const std::string &type, const std::string &name,
+    const std::string &field_name, std::unordered_map<int, int> &action_id_new2comb) {
+  if (type.substr(type.length()-5, 5) == "table") {
+    const string &pipeline_name = type.substr(0, type.length()-6);
+    const string &cfg_table_id = pipeline_name + " " + name;
+    if (cfg_tables_map.find(cfg_table_id) == cfg_tables_map.end()) {
+      std::cout << "modify_json_value: cannot find table name: " << cfg_table_id << std::endl;
+    } else {
+      if (field_name == "action_ids") {
+        for (auto &field : (*cfg_tables_map[cfg_table_id])[field_name]) {
+          field = action_id_new2comb[field.asInt()];
+        }
+      } else {
+        std::cout << "modify_json_value: field not supported: " << field_name << std::endl;
+      }
+    }
+  } else {
+    std::cout << "modify_json_value: type not supported" << std::endl;
+  }
+}
+void
+P4Objects::modify_json_value(const std::string &type, const std::string &name,
+    const std::string &field_name, const std::string &inner_field_name,
+    std::unordered_map<int, int> &action_id_new2comb) {
+  if (type.substr(type.length()-5, 5) == "table") {
+    const string &pipeline_name = type.substr(0, type.length()-6);
+    const string &cfg_table_id = pipeline_name + " " + name;
+    if (cfg_tables_map.find(cfg_table_id) == cfg_tables_map.end()) {
+      std::cout << "modify_json_value: cannot find table name: " << cfg_table_id << std::endl;
+    } else {
+      if (field_name == "default_entry") {
+        Json::Value &field = (*cfg_tables_map[cfg_table_id])[field_name][inner_field_name];
+        field = action_id_new2comb[field.asInt()];
+      } else {
+        std::cout << "modify_json_value: field not supported: " << field_name << std::endl;
+      }
+    }
+  } else {
+    std::cout << "modify_json_value: type not supported" << std::endl;
+  }
+}
+void
+P4Objects::modify_json_value(const std::string &type, const std::string &name,
+    const std::string &field_name, const std::string &inner_field_name,
+    const std::string &val) {
+  if (type.substr(type.length()-5, 5) == "table") {
+    const string &pipeline_name = type.substr(0, type.length()-6);
+    const string &cfg_table_id = pipeline_name + " " + name;
+    if (cfg_tables_map.find(cfg_table_id) == cfg_tables_map.end()) {
+      std::cout << "modify_json_value: cannot find table name: " << cfg_table_id << std::endl;
+    } else {
+      Json::Value &field = (*cfg_tables_map[cfg_table_id])[field_name][inner_field_name];
+      field = val;
+    }
+  } else {
+    std::cout << "modify_json_value: type not supported" << std::endl;
+  }
+}
+const Json::Value *
+P4Objects::get_json_value(const std::string &type, int id) {
+  if (type == "action") {
+    if (cfg_actions_map.find(id) == cfg_actions_map.end()) {
+      std::cout << "get_json_value: cannot find action id: " << id << std::endl;
+      return nullptr;
+    } else {
+      return cfg_actions_map[id];
+    }
+  } else {
+    std::cout << "get_json_value: type not supported" << std::endl;
+    return nullptr;
+  }
+}
+const Json::Value *
+P4Objects::get_json_value(const std::string &type, const std::string &name) {
+  if (type.substr(type.length()-5, 5) == "table") {
+    const string &pipeline_name = type.substr(0, type.length()-6);
+    const string &cfg_table_id = pipeline_name + " " + name;
+    if (cfg_tables_map.find(cfg_table_id) == cfg_tables_map.end()) {
+      std::cout << "get_json_value: cannot find table name: " << cfg_table_id << std::endl;
+      return nullptr;
+    } else {
+      return cfg_tables_map[cfg_table_id];
+    }
+  } else if (type.substr(type.length()-11, 11) == "conditional") {
+    const string &pipeline_name = type.substr(0, type.length()-12);
+    const string &cfg_conditional_id = pipeline_name + " " + name;
+    if (cfg_conditionals_map.find(cfg_conditional_id) == cfg_conditionals_map.end()) {
+      std::cout << "get_json_value: cannot find conditional name: " << cfg_conditional_id << std::endl;
+      return nullptr;
+    } else {
+      return cfg_conditionals_map[cfg_conditional_id];
+    }
+  } else if (type.substr(type.length()-11, 11) == "parse state") {
+    const string &parser_name = type.substr(0, type.length()-12);
+    const string &cfg_parse_state_id = parser_name + " " + name;
+    if (cfg_parse_states_map.find(cfg_parse_state_id) == cfg_parse_states_map.end()) {
+      std::cout << "get_json_value: cannot find parse_state name: " << cfg_parse_state_id << std::endl;
+      return nullptr;
+    } else {
+      return cfg_parse_states_map[cfg_parse_state_id];
+    }
+  } else {
+    std::cout << "get_json_value: type not supported" << std::endl;
+    return nullptr;
+  }
+}
+void
+P4Objects::print_cfg(std::ostream &os) {
+  os << Json::FastWriter().write(cfg_root) << std::endl;
+}
+
+const std::string
+P4Objects::insert_match_table_rt(std::shared_ptr<P4Objects> p4objects_new,
+    const std::string &pipeline_name, 
+    const std::string &name,
+    bool use_null_next) {
+  DupIdChecker dup_id_checker_table("table");
+  if (tableIdCount == 0) {
+    tableIdCount = match_action_tables_map.size();
+  }
+  p4object_id_t table_id = tableIdCount++;
+  dup_id_checker_table.add(table_id);
+  const string table_name = name + "$" + std::to_string(table_id);
+  MatchActionTable *table_ptr = p4objects_new->get_match_action_table(name);
+  MatchTableAbstract * match_table = table_ptr->get_match_table();
+  match_table->set_id(table_id);
+  match_table->set_name(table_name);
+  p4objects_new->modify_json_value(pipeline_name+" table", name, "id", table_id);
+  p4objects_new->modify_json_value(pipeline_name+" table", name, "name", table_name);
+
+  // FlexCore: For now, we assume keys were already successfully built during init_objects
+  // This means the header_id, field_offset of old and new programs are the same
+  // TODO: Support different header and field definition
+
+  if (match_table->get_with_ageing()) {
+    std::cout << "Flexcore: Error: We don't support ageing table yet" << std::endl;
+    // ageing_monitor->add_table(table->get_match_table());
+  }
+
+  std::unique_ptr<MatchActionTable> unique_ptr_table(table_ptr);
+  add_match_action_table(table_name, std::move(unique_ptr_table));
+
+  MatchTableAbstract *table = get_abstract_match_table(table_name);
+
+  if (table != nullptr) {
+    auto abstract_table = get_abstract_match_table_rt(table_name);
+    if (!abstract_table) {
+      std::cout << "Error: table is not null but get_*_rt gives us nullptr" << std::endl;
+    }
+  }
+
+  auto get_next_node = [this](const ControlFlowNode *node_in_new)
+      -> const ControlFlowNode *{
+    if (node_in_new == nullptr)
+      return nullptr;
+    return get_control_node_cfg(node_in_new->get_name());
+  };
+
+  // FlexCore: Assuming same CFG node in old and new programs has the same name
+  // Assuming action_id action_name are the same in two programs
+  // TODO: Support new actions, support same CFG node using diff name
+
+  const std::unordered_map<p4object_id_t, const ControlFlowNode*> &next_nodes
+    = match_table->get_next_nodes();
+
+  std::unordered_map<int, int> action_id_new2comb;
+  for (const auto &node : next_nodes) {
+    if (actionIdCount == 0) {
+      actionIdCount = actions_map.size();
+    }
+    p4object_id_t action_id = actionIdCount++;
+    string action_name = "";
+    ActionFn *action = p4objects_new->get_action_by_id(node.first);
+    action->set_id(action_id);
+    action_name = action->get_name();
+    std::unique_ptr<ActionFn> unique_ptr_action(action);
+    add_action(action_id, std::move(unique_ptr_action));
+    p4objects_new->modify_json_value("action", node.first, "id", action_id);
+    action_id_new2comb[node.first] = action_id;
+    // TODO: Don't see any examples with entries in table. Need to check
+    add_json_value("action", action_id, *(p4objects_new->get_json_value("action", node.first)));
+
+    const ControlFlowNode *next_node = use_null_next ? nullptr : get_next_node(node.second);
+    table->set_next_node(action_id, next_node);
+    add_action_to_table(table_name, action_name, action);
+
+    // TODO: For now, we don't support action_profile
+    // if (act_prof_name != "")
+    //   add_action_to_act_prof(act_prof_name, action_name, action);
+  }
+  p4objects_new->modify_json_value(pipeline_name+" table", name, "action_ids", action_id_new2comb);
+  p4objects_new->modify_json_value(pipeline_name+" table", name, "default_entry", "action_id", action_id_new2comb);
+
+  add_json_value(pipeline_name+" table", table_name, *(p4objects_new->get_json_value(pipeline_name+" table", name)));
+
+  if (match_table->get_has_next_node_hit())
+    table->set_next_node_hit(use_null_next ? nullptr : get_next_node(match_table->get_next_node_hit()));
+  if (match_table->get_has_next_node_miss())
+    table->set_next_node_miss(use_null_next ? nullptr : get_next_node(match_table->get_next_node_miss()));
+
+  table->set_next_node_miss_default(
+      use_null_next ? nullptr : get_next_node(match_table->get_next_node_miss()));
+
+  return table_name;
+
+  // Since we use the new program's ActionFn, we should be fine for default_entry, entries
+  // TODO: Need to be sure
+}
+
+const std::string
+P4Objects::insert_conditional_rt(std::shared_ptr<P4Objects> p4objects_new,
+    const std::string &pipeline_name, 
+    const std::string &name,
+    bool use_null_next) {
+  DupIdChecker dup_id_checker_condition("condition");
+  const string conditional_name = name;
+  Conditional *conditional = p4objects_new->get_conditional(conditional_name);
+  if (conditionalIdCount == 0) {
+    conditionalIdCount = conditionals_map.size();
+  }
+  p4object_id_t conditional_id = conditionalIdCount++;
+  std::string new_name = "node_";
+  new_name += std::to_string(++conditionalNameMax);
+  dup_id_checker_condition.add(conditional_id);
+  conditional->set_id(conditional_id);
+  conditional->set_name(new_name);
+  add_conditional(new_name, unique_ptr<Conditional>(conditional));
+  p4objects_new->modify_json_value(pipeline_name+" conditional", conditional_name, "id", conditional_id);
+  p4objects_new->modify_json_value(pipeline_name+" conditional", conditional_name, "name", new_name);
+
+  add_json_value(pipeline_name+" conditional", new_name, *(p4objects_new->get_json_value(pipeline_name+" conditional", conditional_name)));
+
+  auto get_next_node = [this](const ControlFlowNode *node_in_new)
+      -> ControlFlowNode *{
+    if (node_in_new == nullptr)
+      return nullptr;
+    return get_control_node_cfg(node_in_new->get_name());
+  };
+
+  conditional->set_next_node_if_true(use_null_next ? nullptr : get_next_node(conditional->get_next_node_if_true()));
+  conditional->set_next_node_if_false(use_null_next ? nullptr : get_next_node(conditional->get_next_node_if_false()));
+
+  return new_name;
+}
+
+
+
+void
+P4Objects::prepare_flex_hdr_parser(Json::Value &cfg_root) {
+  auto &cfg_header_types = cfg_root["header_types"];
+  // FlexCore: Prepare flex header
+  for (auto &cfg_header_type : cfg_header_types) {
+    if (cfg_header_type["name"] == "scalars_0") {
+      std::string s = "[\"flexMetadata.version\", 8, false]";
+      std::stringstream ss(s);
+      Json::Value v;
+      ss >> v;
+      cfg_header_type["fields"].append(v);
+      break;
+    }
+  }
+
+  // insert a state to init flex version for all parsers
+  // TODO: for now, assuming only has one parser
+  auto &cfg_parsers = cfg_root["parsers"];
+  if (cfg_parsers.size() != 1) {
+    std::cout << "Error: we only support single parser\n";
+  }
+  for (auto &cfg_parser : cfg_parsers) {
+    std::string orig_init_state_name = "";
+    if (!cfg_parser["init_state"].isNull()) {
+      orig_init_state_name = cfg_parser["init_state"].asString();
+    }
+    static const char s[] = 
+      "{"
+      "  \"name\" : \"flex_start\","
+      "  \"id\" : -1,"
+      "  \"parser_ops\" : ["
+      "    {"
+      "      \"parameters\" : ["
+      "        {"
+      "          \"type\" : \"field\","
+      "          \"value\" : [\"scalars\", \"flexMetadata.version\"]"
+      "        },"
+      "        {"
+      "          \"type\" : \"hexstr\","
+      "          \"value\" : \"0x00\""
+      "        }"
+      "      ],"
+      "      \"op\" : \"set\""
+      "    }"
+      "  ],"
+      "  \"transitions\" : ["
+      "    {"
+      "      \"type\" : \"default\","
+      "      \"value\" : null,"
+      "      \"mask\" : null,"
+      "      \"next_state\" : %s"
+      "    }"
+      "  ],"
+      "  \"transition_key\" : []"
+      "}";
+    char output[2048];
+
+    std::sprintf(output, s,
+      (orig_init_state_name == "" ? "null" : "\"" + orig_init_state_name + "\"").c_str());
+
+    std::stringstream ss;
+    Json::Value v;
+    ss << output;
+    ss >> v;
+
+    cfg_parser["parse_states"].append(v);
+    cfg_parser["init_state"] = "flex_start";
+  }
+}
+
+const Json::Value
+P4Objects::build_flex_json_value(int id,
+    const std::string &name,
+    const std::string &old_next_name,
+    const std::string &new_next_name) {
+  static const char s[] = 
+    "{"
+    "  \"name\" : \"%s\","
+    "  \"id\" : %d,"
+    "  \"source_info\" : {"
+    "    \"filename\" : \"flex\","
+    "    \"line\" : 1,"
+    "    \"column\" : 1,"
+    "    \"source_fragment\" : \"%s\""
+    "  },"
+    "  \"expression\" : {"
+    "    \"type\" : \"expression\","
+    "    \"value\" : {"
+    "      \"op\" : \"==\","
+    "      \"left\" : {"
+    "        \"type\" : \"field\","
+    "        \"value\" : [\"scalars\", \"flexMetadata.version\"]"
+    "      },"
+    "      \"right\" : {"
+    "        \"type\" : \"hexstr\","
+    "        \"value\" : \"0x01\""
+    "      }"
+    "    }"
+    "  },"
+    "  \"false_next\" : %s,"
+    "  \"true_next\" : %s"
+    "}";
+  char output[2048];
+
+  const char *new_next_name_cstr = (new_next_name == "" ? "null" : "\"" + new_next_name + "\"").c_str();
+  const char *old_next_name_cstr = (old_next_name == "" ? "null" : "\"" + old_next_name + "\"").c_str();
+
+  std::sprintf(output, s, name.c_str(), id, name.c_str(), 
+    old_next_name_cstr,
+    new_next_name_cstr);
+
+  std::stringstream ss;
+  Json::Value v;
+  ss << output;
+  ss >> v;
+
+  return v;
+}
+
+const std::string
+P4Objects::insert_flex_rt(const std::string &pipeline_name, 
+    const std::string &old_next_name,
+    const std::string &new_next_name) {
+  DupIdChecker dup_id_checker_condition("condition");
+  if (conditionalIdCount == 0) {
+    conditionalIdCount = conditionals_map.size();
+  }
+  p4object_id_t conditional_id = conditionalIdCount++;
+  std::string conditional_name = "$TE_";
+  conditional_name += std::to_string(++conditionalNameMax);
+  dup_id_checker_condition.add(conditional_id);
+
+  Json::Value cfg_conditional = build_flex_json_value(conditional_id, conditional_name, old_next_name, new_next_name);
+  auto conditional = new Conditional(
+    conditional_name, conditional_id, object_source_info(cfg_conditional));
+  const auto &cfg_expression = cfg_conditional["expression"];
+  build_expression(cfg_expression, conditional);
+  conditional->build();
+
+  add_conditional(conditional_name, unique_ptr<Conditional>(conditional));
+  add_json_value(pipeline_name+" conditional", conditional_name, cfg_conditional);
+
+  const auto &cfg_true_next = cfg_conditional["true_next"];
+  const auto &cfg_false_next = cfg_conditional["false_next"];
+
+  if (!cfg_true_next.isNull()) {
+    auto next_node = get_control_node_cfg(cfg_true_next.asString());
+    conditional->set_next_node_if_true(next_node);
+  }
+  if (!cfg_false_next.isNull()) {
+    auto next_node = get_control_node_cfg(cfg_false_next.asString());
+    conditional->set_next_node_if_false(next_node);
+  }
+  return conditional_name;
+}
+void
+P4Objects::change_init_node_rt(const std::string &pipeline_name,
+    const std::string &dst_node_name) {
+  Pipeline *pipeline = get_pipeline(pipeline_name);
+  ControlFlowNode * dst_ptr = dst_node_name == "" ? nullptr : get_control_node_cfg(dst_node_name);
+  pipeline->set_first_node(dst_ptr);
+  modify_json_value("pipeline", pipeline_name, "init_table", dst_node_name);
+}
+void
+P4Objects::change_table_next_node_rt(const std::string &pipeline_name,
+    const std::string &src_table_name,
+    const std::string &edge_name,
+    const std::string &dst_node_name) {
+  MatchTableAbstract *src_match_table = get_abstract_match_table(src_table_name);
+  ControlFlowNode * dst_ptr = dst_node_name == "" ? nullptr : get_control_node_cfg(dst_node_name);
+  if (edge_name == "base_default_next") {
+    src_match_table->set_next_node_miss_default(dst_ptr);
+    modify_json_value(pipeline_name+" table", src_table_name, edge_name, dst_node_name);
+  } else if (edge_name == "__HIT__") {
+    src_match_table->set_next_node_hit(dst_ptr);
+    modify_json_value(pipeline_name+" table", src_table_name, edge_name, dst_node_name);
+  } else if (edge_name == "__MISS__") {
+    src_match_table->set_next_node_miss(dst_ptr);
+    modify_json_value(pipeline_name+" table", src_table_name, edge_name, dst_node_name);
+  } else {
+    p4object_id_t action_id = get_action(src_table_name, edge_name)->get_id();
+    src_match_table->set_next_node(action_id, dst_ptr);
+    modify_json_value(pipeline_name+" table", src_table_name, "next_tables", edge_name, dst_node_name);
+  }
+}
+void
+P4Objects::change_conditional_next_node_rt(const std::string &pipeline_name,
+    const std::string &src_conditional_name,
+    const std::string &edge_name,
+    const std::string &dst_node_name) {
+  Conditional *src_conditional = get_conditional(src_conditional_name);
+  ControlFlowNode * dst_ptr = dst_node_name == "" ? nullptr : get_control_node_cfg(dst_node_name);
+  if (edge_name == "true_next") {
+    src_conditional->set_next_node_if_true(dst_ptr);
+    modify_json_value(pipeline_name+" conditional", src_conditional_name, edge_name, dst_node_name);
+  } else if (edge_name == "false_next") {
+    src_conditional->set_next_node_if_false(dst_ptr);
+    modify_json_value(pipeline_name+" conditional", src_conditional_name, edge_name, dst_node_name);
+  }
+}
+void
+P4Objects::flex_trigger_rt(bool on) {
+  ParserOpSet<Data> *op = (ParserOpSet<Data>*) flex_init_state->get_parser_op(0);
+  if (on) {
+    op->src.set(Data("0x01"));
+    // op->set_src(Data("0x00"));
+  } else {
+    op->src.set(Data("0x00"));
+    // op->set_src(Data("0x01"));
+  }
+}
+void
+P4Objects::delete_flex_rt(const std::string &pipeline_name,
+    const std::string &name) {
+  delete_conditional_rt(pipeline_name, name);
+}
+void
+P4Objects::delete_conditional_rt(const std::string &pipeline_name,
+    const std::string &name) {
+  remove_conditional(name);
+  remove_json_value(pipeline_name+" conditional", name);
+}
+void
+P4Objects::delete_match_table_rt(const std::string &pipeline_name,
+    const std::string &name) {
+  // TODO: So far, I only delete it from the unordered map.
+  //       I assume by doing so, the pointer to the table is removed
+  //       and gc will delete the table entries (match_unit) too.
+  //       Need to double check
+  // TODO: Also, I don't delete the related action from the map yet
+  //       This is secondary because actions don't take much resource
+  remove_match_action_table(name);
+  remove_json_value(pipeline_name+" table", name);
+}
+
+void
+P4Objects::insert_parse_state_rt(std::shared_ptr<P4Objects> p4objects_new,
+    const std::string &parser_name, 
+    const std::string &name) {
+  DupIdChecker dup_id_checker_parse_state("parse state");
+  ParseState *parse_state_ptr = p4objects_new->get_parse_state(parser_name, name);
+  const std::string &parse_state_name = name;
+  if (parseStateIdCount[parser_name] == 0) {
+    parseStateIdCount[parser_name] = parse_states[parser_name].size();
+  }
+  p4object_id_t id = parseStateIdCount[parser_name]++;
+  dup_id_checker_parse_state.add(id);
+  parse_state_ptr->set_id(id);
+  p4objects_new->modify_json_value(parser_name+" parse-state", parse_state_name, "id", id);
+
+  // Assuming header_id is the same
+  // TODO: if we want to support different header id before/after changes, 
+  //    review this part
+
+  // const Json::Value &cfg_parser_ops = cfg_parse_state["parser_ops"];
+  // for (const auto &cfg_parser_op : cfg_parser_ops) {
+  //   const string op_type = cfg_parser_op["op"].asString();
+  //   const Json::Value &cfg_parameters = cfg_parser_op["parameters"];
+
+  //   if (op_type == "extract" || op_type == "extract_VL") {
+  //     if (op_type == "extract")
+  //       check_json_tuple_size(cfg_parser_op, "parameters", 1);
+  //     else
+  //       check_json_tuple_size(cfg_parser_op, "parameters", 2);
+
+  //     const auto &cfg_extract = cfg_parameters[0];
+  //     const auto extract_type = cfg_extract["type"].asString();
+  //     const HeaderType *header_type = nullptr;
+
+  //     ArithExpression VL_expr;
+  //     if (op_type == "extract_VL") {
+  //       const auto &cfg_VL_expr = cfg_parameters[1];
+  //       if (cfg_VL_expr["type"].asString() != "expression") {
+  //         throw json_exception(
+  //             EFormat() << "Parser 'extract_VL' operation has invalid "
+  //                       << "length type '" << cfg_VL_expr["type"].asString()
+  //                       << "', expected 'expression'",
+  //             cfg_VL_expr);
+  //       }
+  //       build_expression(cfg_VL_expr["value"], &VL_expr);
+  //       VL_expr.build();
+  //     }
+
+  //     if (extract_type == "regular") {
+  //       const string extract_header = cfg_extract["value"].asString();
+  //       header_id_t header_id = get_header_id_cfg(extract_header);
+  //       header_type = &phv_factory.get_header_type(header_id);
+  //       if (op_type == "extract") {
+  //         parse_state->add_extract(header_id);
+  //       } else {
+  //         parse_state->add_extract_VL(
+  //             header_id, VL_expr, header_type->get_VL_max_header_bytes());
+  //       }
+  //     } else if (extract_type == "stack") {
+  //       const string extract_header = cfg_extract["value"].asString();
+  //       header_stack_id_t header_stack_id =
+  //           get_header_stack_id_cfg(extract_header);
+  //       header_type = header_stack_to_type_map[extract_header];
+  //       if (op_type == "extract") {
+  //         parse_state->add_extract_to_stack(header_stack_id);
+  //       } else {
+  //         parse_state->add_extract_to_stack_VL(
+  //             header_stack_id, VL_expr,
+  //             header_type->get_VL_max_header_bytes());
+  //       }
+  //     } else if (extract_type == "union_stack") {
+  //       const auto &cfg_union_stack = cfg_extract["value"];
+  //       check_json_tuple_size(cfg_extract, "value", 2);
+  //       auto extract_union_stack = cfg_union_stack[0].asString();
+  //       auto header_union_stack_id = get_header_union_stack_id_cfg(
+  //           extract_union_stack);
+  //       auto *union_type = header_union_stack_to_type_map.at(
+  //           extract_union_stack);
+  //       auto header_offset = union_type->get_header_offset(
+  //           cfg_union_stack[1].asString());
+  //       header_type = union_type->get_header_type(
+  //           cfg_union_stack[1].asString());
+  //       if (op_type == "extract") {
+  //         parse_state->add_extract_to_union_stack(
+  //             header_union_stack_id, header_offset);
+  //       } else {
+  //         parse_state->add_extract_to_union_stack_VL(
+  //             header_union_stack_id, header_offset,
+  //             VL_expr, header_type->get_VL_max_header_bytes());
+  //       }
+  //     } else {
+  //       throw json_exception(
+  //           EFormat() << "Extract type '" << extract_type
+  //                     << "' not supported",
+  //           cfg_parser_op);
+  //     }
+
+  //     // We perform this check after adding the extract operation to the
+  //     // parser state only for the sake of code clarity. It does not matter
+  //     // much as the JSON processing will stop as soon as a json_exception
+  //     // is thrown.
+  //     if (op_type == "extract" && header_type->is_VL_header() &&
+  //         !header_type->has_VL_expr()) {
+  //       throw json_exception(
+  //           EFormat() << "Cannot use 'extract' parser op with a VL header"
+  //                     << " for which no length expression was provided,"
+  //                     << " use 'extract_VL' instead",
+  //           cfg_parser_op);
+  //     }
+
+    // enable_arith won't change (src/dst fields for all set ops are the same before/after changes)
+    // VL is not supported
+    // TODO: if we want to support changing set op, review this part
+    // } else if (op_type == "set") {
+    //   check_json_tuple_size(cfg_parser_op, "parameters", 2);
+    //   const Json::Value &cfg_dest = cfg_parameters[0];
+    //   const Json::Value &cfg_src = cfg_parameters[1];
+
+    //   const string &dest_type = cfg_dest["type"].asString();
+    //   if (dest_type != "field") {
+    //     throw json_exception(
+    //         EFormat() << "Parser 'set' operation has invalid destination "
+    //                   << "type '" << dest_type << "', expected 'field'",
+    //         cfg_parser_op);
+    //   }
+    //   const auto dest = field_info(cfg_dest["value"][0].asString(),
+    //                                cfg_dest["value"][1].asString());
+    //   enable_arith(std::get<0>(dest), std::get<1>(dest));
+
+    //   const string &src_type = cfg_src["type"].asString();
+    //   if (src_type == "field") {
+    //     const auto src = field_info(cfg_src["value"][0].asString(),
+    //                                 cfg_src["value"][1].asString());
+    //     parse_state->add_set_from_field(
+    //       std::get<0>(dest), std::get<1>(dest),
+    //       std::get<0>(src), std::get<1>(src));
+    //     enable_arith(std::get<0>(src), std::get<1>(src));
+    //   } else if (src_type == "hexstr") {
+    //     parse_state->add_set_from_data(
+    //       std::get<0>(dest), std::get<1>(dest),
+    //       Data(cfg_src["value"].asString()));
+    //   } else if (src_type == "lookahead") {
+    //     int offset = cfg_src["value"][0].asInt();
+    //     int bitwidth = cfg_src["value"][1].asInt();
+    //     parse_state->add_set_from_lookahead(
+    //       std::get<0>(dest), std::get<1>(dest), offset, bitwidth);
+    //   } else if (src_type == "expression") {
+    //     ArithExpression expr;
+    //     build_expression(cfg_src["value"], &expr);
+    //     expr.build();
+    //     parse_state->add_set_from_expression(
+    //       std::get<0>(dest), std::get<1>(dest), expr);
+    //   } else {
+    //     throw json_exception(
+    //         EFormat() << "Parser 'set' operation has unsupported source "
+    //                   << "type '" << src_type << "'",
+    //         cfg_parser_op);
+    //   }
+
+
+    // } else if (op_type == "verify") {
+    //   check_json_tuple_size(cfg_parser_op, "parameters", 2);
+    //   BoolExpression cond_expr;
+    //   build_expression(cfg_parameters[0], &cond_expr);
+    //   cond_expr.build();
+    //   ArithExpression error_expr;
+    //   const auto &j_error_expr = cfg_parameters[1];
+    //   if (j_error_expr.isInt()) {  // backward-compatibility
+    //     auto error_code =  static_cast<ErrorCode::type_t>(
+    //         j_error_expr.asInt());
+    //     if (!error_codes.exists(error_code)) {
+    //       throw json_exception("Invalid error code in verify statement",
+    //                            cfg_parser_op);
+    //     }
+    //     error_expr.push_back_load_const(Data(error_code));
+    //   } else {
+    //     build_expression(j_error_expr, &error_expr);
+    //   }
+    //   error_expr.build();
+    //   parse_state->add_verify(cond_expr, error_expr);
+
+    // Assuming no primitives are used in parser, or we need to deal with
+    // parse_methods by moving those in p4objects_new to p4objects_rt
+    // TODO: change this if we want to support changing primitives in parser
+    // } else if (op_type == "primitive") {
+    //   check_json_tuple_size(cfg_parser_op, "parameters", 1);
+    //   const auto primitive_name = cfg_parameters[0]["op"].asString();
+    //   std::unique_ptr<ActionFn> action_fn(new ActionFn(
+    //       primitive_name, 0, 0));
+    //   add_primitive_to_action(cfg_parameters[0], action_fn.get());
+    //   parse_state->add_method_call(action_fn.get());
+    //   parse_methods.push_back(std::move(action_fn));
+
+
+    // } else if (op_type == "shift") {
+    //   if (cfg_parameters.size() != 1) {
+    //     throw json_exception(
+    //         EFormat() << "Parser 'shift' operation has invalid number of "
+    //                   << "arguments, expected " << 1,
+    //         cfg_parser_op);
+    //   }
+    //   auto shift_bytes = static_cast<size_t>(cfg_parameters[0].asInt());
+    //   parse_state->add_shift(shift_bytes);
+
+    // Similar to set op, we also need changing enable_arith for advance op
+    // TODO: change this to support advance op
+    // } else if (op_type == "advance") {
+    //   if (cfg_parameters.size() != 1) {
+    //     throw json_exception(
+    //         EFormat() << "Parser 'advance' operation has invalid number of "
+    //                   << "arguments, expected " << 1,
+    //         cfg_parser_op);
+    //   }
+    //   const auto &shift_type = cfg_parameters[0]["type"].asString();
+    //   if (shift_type == "field") {
+    //     const auto shift = field_info(
+    //         cfg_parameters[0]["value"][0].asString(),
+    //         cfg_parameters[0]["value"][1].asString());
+    //     parse_state->add_advance_from_field(
+    //         std::get<0>(shift), std::get<1>(shift));
+    //     enable_arith(std::get<0>(shift), std::get<1>(shift));
+    //   } else if (shift_type == "hexstr") {
+    //     parse_state->add_advance_from_data(
+    //         Data(cfg_parameters[0]["value"].asString()));
+    //   } else if (shift_type == "expression") {
+    //     ArithExpression expr;
+    //     build_expression(cfg_parameters[0]["value"], &expr);
+    //     expr.build();
+    //     parse_state->add_advance_from_expression(expr);
+    //   } else {
+    //     throw json_exception(
+    //         EFormat() << "Parser 'advance' operation has unsupported "
+    //                   << "parameter type '" << shift_type << "'",
+    //         cfg_parser_op);
+    //   }
+    // } else {
+    //   throw json_exception(
+    //       EFormat() << "Parser op '" << op_type << "'not supported",
+    //       cfg_parser_op);
+    // }
+  // }
+
+  // Again, we assume header id won't change
+  // TODO: change this if want to support changing header
+  // ParseSwitchKeyBuilder key_builder;
+  // const Json::Value &cfg_transition_key = cfg_parse_state["transition_key"];
+  // for (const auto &cfg_key_elem : cfg_transition_key) {
+  //   const string type = cfg_key_elem["type"].asString();
+  //   const auto &cfg_value = cfg_key_elem["value"];
+  //   if (type == "field") {
+  //     const auto field = field_info(cfg_value[0].asString(),
+  //                                   cfg_value[1].asString());
+  //     header_id_t header_id = std::get<0>(field);
+  //     int field_offset = std::get<1>(field);
+  //     key_builder.push_back_field(header_id, field_offset,
+  //                                 get_field_bits(header_id, field_offset));
+  //   } else if (type == "stack_field") {
+  //     const string header_stack_name = cfg_value[0].asString();
+  //     header_stack_id_t header_stack_id =
+  //       get_header_stack_id_cfg(header_stack_name);
+  //     HeaderType *header_type = header_stack_to_type_map[header_stack_name];
+  //     const string field_name = cfg_value[1].asString();
+  //     int field_offset = header_type->get_field_offset(field_name);
+  //     int bitwidth = header_type->get_bit_width(field_offset);
+  //     key_builder.push_back_stack_field(header_stack_id, field_offset,
+  //                                       bitwidth);
+  //   } else if (type == "union_stack_field") {
+  //     auto union_stack_name = cfg_value[0].asString();
+  //     auto header_union_stack_id = get_header_union_stack_id_cfg(
+  //         union_stack_name);
+  //     auto *union_type = header_union_stack_to_type_map.at(
+  //         union_stack_name);
+  //     auto header_offset = union_type->get_header_offset(
+  //         cfg_value[1].asString());
+  //     auto header_type = union_type->get_header_type(
+  //         cfg_value[1].asString());
+  //     auto field_offset = header_type->get_field_offset(
+  //         cfg_value[2].asString());
+  //     auto bitwidth = header_type->get_bit_width(field_offset);
+  //     key_builder.push_back_union_stack_field(
+  //         header_union_stack_id, header_offset, field_offset, bitwidth);
+  //   } else if (type == "lookahead") {
+  //     int offset = cfg_value[0].asInt();
+  //     int bitwidth = cfg_value[1].asInt();
+  //     key_builder.push_back_lookahead(offset, bitwidth);
+  //   } else {
+  //     throw json_exception("Invalid entry in parse state key",
+  //                          cfg_key_elem);
+  //   }
+  // }
+
+  // if (cfg_transition_key.size() > 0u)
+  //   parse_state->set_key_builder(key_builder);
+
+  std::unordered_map<std::string, std::unique_ptr<ParseState>> &current_parse_states
+      = parse_states[parser_name];
+  std::unique_ptr<ParseState> parse_state(parse_state_ptr);
+  add_new_object(&current_parse_states, parser_name + " parse state", parse_state_name,
+                 std::move(parse_state));
+  // parse_states.push_back(std::move(parse_state));
+  add_json_value(parser_name+" parse state", parse_state_name, *(p4objects_new->get_json_value(parser_name+" parse state", parse_state_name)));
+
+  const ParseState *next_state = parse_state_ptr->get_default_next_state();
+  if (next_state != nullptr) {
+    const string next_state_name = next_state->get_name();
+    parse_state_ptr->set_default_switch_case(get_parse_state(parser_name, next_state_name));
+  }
+  for (auto &parse_state_switch_case : parse_state_ptr->get_switch_cases()) {
+    const ParseState *next_state = parse_state_switch_case->get_next_state();
+    if (next_state != nullptr) {
+      const string next_state_name = next_state->get_name();
+      parse_state_switch_case->set_next_state(get_parse_state(parser_name, next_state_name));
+    }
+
+    // assuming all next states' names are the same before/after changes
+    // TODO: change this if name can be diff
+    // don't support parse_vset
+    // TODO: change this if want to support parse_vset
+    // if (type == "default") {
+    //   parse_state->set_default_switch_case(next_state);
+    // } else if (type == "hexstr") {
+    //   const string value_hexstr = cfg_transition["value"].asString();
+    //   ByteContainer value(value_hexstr);
+    //   if (value.size() != expected_transition_value_size) {
+    //     throw json_exception(
+    //         EFormat() << "Parser transition value has incorrect width, "
+    //                   << "expected width is "
+    //                   << expected_transition_value_size << " bytes "
+    //                   << "but actual width is " << value.size() << " bytes",
+    //         cfg_transition);
+    //   }
+    //   const auto &cfg_mask = cfg_transition["mask"];
+    //   if (cfg_mask.isNull()) {
+    //     parse_state->add_switch_case(value, next_state);
+    //   } else {
+    //     ByteContainer mask(cfg_mask.asString());
+    //     if (mask.size() != expected_transition_value_size) {
+    //       throw json_exception(
+    //           EFormat() << "Parser transition mask has incorrect width, "
+    //                     << "expected width is "
+    //                     << expected_transition_value_size << " bytes "
+    //                     << "but actual width is " << mask.size()
+    //                     << " bytes", cfg_transition);
+    //     }
+    //     parse_state->add_switch_case_with_mask(value, mask, next_state);
+    //   }
+    // } else if (type == "parse_vset") {
+    //   const string vset_name = cfg_transition["value"].asString();
+    //   ParseVSet *vset = get_parse_vset_cfg(vset_name);
+    //   const auto &cfg_mask = cfg_transition["mask"];
+    //   if (cfg_mask.isNull()) {
+    //     parse_state->add_switch_case_vset(vset, next_state);
+    //   } else {
+    //     ByteContainer mask(cfg_mask.asString());
+    //     auto expected_width = (vset->get_compressed_bitwidth() + 7) / 8;
+    //     if (mask.size() != expected_width) {
+    //       throw json_exception(
+    //           EFormat() << "Parser transition mask for value set has "
+    //                     << "incorrect width, expected width is "
+    //                     << expected_width << " bytes "
+    //                     << "but actual width is " << mask.size()
+    //                     << " bytes", cfg_transition);
+    //     }
+    //     parse_state->add_switch_case_vset_with_mask(
+    //         vset, ByteContainer(mask), next_state);
+    //   }
+    // }
+  }
+
+}
+
 ActionFn *
 P4Objects::get_action_rt(const std::string &table_name,
                          const std::string &action_name) const {
@@ -2559,6 +3691,33 @@ Parser *
 P4Objects::get_parser_rt(const std::string &name) const {
   auto it = parsers.find(name);
   return (it != parsers.end()) ? it->second.get() : nullptr;
+}
+
+ParseState *
+P4Objects::get_parse_state(const std::string &parser_name, const std::string &name) const {
+  auto it = parse_states.find(parser_name);
+  if (it != parse_states.end()) {
+    auto it2 = it->second.find(name);
+    if (it2 != it->second.end()) {
+      return it2->second.get();
+    }
+  }
+  throw json_exception(
+      EFormat() << "Invalid reference to parse state"
+                << " with parser name '" << parser_name
+                << "' and name '" << name << "'");
+  return nullptr;
+}
+
+ParseState *
+P4Objects::get_parse_state_rt(const std::string &parser_name, const std::string &name) const {
+  auto it = parse_states.find(parser_name);
+  if (it == parse_states.end()) {
+    return nullptr;
+  } else {
+    auto it2 = it->second.find(name);
+    return (it2 != it->second.end()) ? it2->second.get() : nullptr;
+  }
 }
 
 Deparser *
@@ -2720,6 +3879,13 @@ P4Objects::add_match_action_table(const std::string &name,
 }
 
 void
+P4Objects::remove_match_action_table(const std::string &name) {
+  remove_control_node(name);
+  // not really needed as add_control_node enforces a stricter check
+  remove_object(&match_action_tables_map, "match-action table", name);
+}
+
+void
 P4Objects::add_action_profile(const std::string &name,
                               std::unique_ptr<ActionProfile> action_profile) {
   add_new_object(&action_profiles_map, "action profile", name,
@@ -2740,6 +3906,12 @@ P4Objects::add_conditional(const std::string &name,
 }
 
 void
+P4Objects::remove_conditional(const std::string &name) {
+  remove_control_node(name);
+  remove_object(&conditionals_map, "condition", name);
+}
+
+void
 P4Objects::add_control_action(const std::string &name,
                               std::unique_ptr<ControlAction> control_action) {
   add_control_node(name, control_action.get());
@@ -2749,6 +3921,11 @@ P4Objects::add_control_action(const std::string &name,
 void
 P4Objects::add_control_node(const std::string &name, ControlFlowNode *node) {
   add_new_object(&control_nodes_map, "control node", name, node);
+}
+
+void
+P4Objects::remove_control_node(const std::string &name) {
+  remove_object(&control_nodes_map, "control node", name);
 }
 
 ControlFlowNode *

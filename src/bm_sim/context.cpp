@@ -22,6 +22,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <fstream>
 #include <set>
 #include <string>
 #include <vector>
@@ -72,6 +73,164 @@ Context::mt_add_entry(const std::string &table_name,
   if (!action) return MatchErrorCode::INVALID_ACTION_NAME;
   return table->add_entry(
     match_key, action, std::move(action_data), handle, priority);
+}
+
+// helper function for FlexCore
+void convert_id_to_name(std::unordered_map<std::string, std::string> &id2newNodeName, 
+    std::string *out, std::string *in, int size) {
+  for (int i = 0; i < size; i++) {
+    if (in[i] == "null") {
+      out[i] = "";
+      continue;
+    }
+    const std::string prefix = in[i].substr(0, 3);
+    const std::string actual_name = in[i].substr(4);
+    if (prefix == "new"
+        || prefix == "flx") {
+      if (id2newNodeName.find(in[i]) == id2newNodeName.end()) {
+        std::cout << "Error: cannot find the id " << in[i] << " from id2newNodeName\n";
+        break;
+      }
+      out[i] = id2newNodeName[in[i]];
+    } else if (prefix == "old") {
+      out[i] = actual_name;
+    } else {
+      std::cout << "Error: prefix " << prefix << " has no match\n";
+    }
+  }
+}
+
+// helper function for FlexCore
+void dup_check(const std::unordered_map<std::string, std::string> &id2newNodeName, 
+    const std::string &name) {
+  if (id2newNodeName.find(name) != id2newNodeName.end()) {
+    std::cout << "Error: Duplicated id " << name << " from id2newNodeName\n";
+  }
+}
+
+int
+Context::mt_runtime_reconfig(const std::string &json_file,
+                             const std::string &plan_file,
+                             LookupStructureFactory *lookup_factory,
+                             const std::set<header_field_pair> &required_fields,
+                             const ForceArith &arith_objects) {
+  std::ifstream fs(json_file, std::ios::in);
+  if (!fs) {
+    std::cout << "JSON input file " << json_file << " cannot be opened\n";
+    return 2;
+  }
+  p4objects_new = std::make_shared<P4Objects>(std::cout, true);
+  int status = p4objects_new->init_objects(&fs, lookup_factory, device_id, cxt_id,
+                                           notifications_transport,
+                                           required_fields, arith_objects);
+  if (status) return status;
+
+  std::ifstream ifs(plan_file);
+  if (!ifs) {
+    std::cout << "Open plan failed: " << plan_file << std::endl;
+    return 3;
+  }
+
+  std::string line;
+  std::unordered_map<std::string, std::string> id2newNodeName;
+  std::string op;
+  std::string target;
+  std::string pipeline;
+  std::string items[3], vals[3];
+  while (std::getline(ifs, line)) {
+    sleep(1);
+    std::stringstream ss(line);
+    ss >> op >> target;
+    if (op == "insert") {
+      if (target == "tabl") {
+        ss >> pipeline >> items[0];
+        const std::string prefix = items[0].substr(0, 3);
+        const std::string actual_name = items[0].substr(4);
+        if (prefix != "new") {
+          std::cout << "Error: inserted table should only have prefix 'new_'\n";
+        }
+        dup_check(id2newNodeName, items[0]);
+        id2newNodeName[items[0]] = p4objects_rt->insert_match_table_rt(p4objects_new, pipeline, actual_name, true);
+      } else if (target == "cond") {
+        ss >> pipeline >> items[0];
+        const std::string prefix = items[0].substr(0, 3);
+        const std::string actual_name = items[0].substr(4);
+        if (prefix != "new") {
+          std::cout << "Error: inserted cond should only have prefix 'new_'\n";
+        }
+        dup_check(id2newNodeName, items[0]);
+        id2newNodeName[items[0]] = p4objects_rt->insert_conditional_rt(p4objects_new, pipeline, actual_name, true);
+      } else if (target == "flex") {
+        ss >> pipeline >> items[0] >> items[1] >> items[2];
+        const std::string prefix = items[0].substr(0, 3);
+        const std::string actual_name = items[0].substr(4);
+        if (prefix != "flx") {
+          std::cout << "Error: inserted flex should only have prefix 'flx_'\n";
+        }
+        convert_id_to_name(id2newNodeName, vals, items+1, 2);
+        id2newNodeName[items[0]] = p4objects_rt->insert_flex_rt(pipeline, vals[0], vals[1]);
+      } else {
+        std::cout << "Error: unsupported target for insert: " << target << std::endl;
+      }
+    } else if (op == "change") {
+      if (target == "tabl") {
+        ss >> pipeline >> items[0] >> items[2] >> items[1];
+        convert_id_to_name(id2newNodeName, vals, items, 2);
+        p4objects_rt->change_table_next_node_rt(pipeline, vals[0], items[2], vals[1]);
+      } else if (target == "cond") {
+        ss >> pipeline >> items[0] >> items[2] >> items[1];
+        convert_id_to_name(id2newNodeName, vals, items, 2);
+        p4objects_rt->change_conditional_next_node_rt(pipeline, vals[0], items[2], vals[1]);
+      } else if (target == "flex") {
+        ss >> pipeline >> items[0] >> items[2] >> items[1];
+        convert_id_to_name(id2newNodeName, vals, items, 2);
+        p4objects_rt->change_conditional_next_node_rt(pipeline, vals[0], items[2], vals[1]);
+      } else if (target == "init") {
+        ss >> pipeline >> items[0];
+        convert_id_to_name(id2newNodeName, vals, items, 1);
+        p4objects_rt->change_init_node_rt(pipeline, vals[0]);
+      } else {
+        std::cout << "Error: unsupported target for change: " << target << std::endl;
+      }
+    } else if (op == "trigger") {
+      if (target == "on") {
+        p4objects_rt->flex_trigger_rt(true);
+      } else if (target == "off") {
+        p4objects_rt->flex_trigger_rt(false);
+      } else {
+        std::cout << "Error: unsupported target for trigger: " << target << std::endl;
+      }
+    } else if (op == "delete") {
+      ss >> pipeline >> items[0];
+      convert_id_to_name(id2newNodeName, vals, items, 1);
+      if (target == "tabl") {
+        p4objects_rt->delete_match_table_rt(pipeline, vals[0]);
+      } else if (target == "cond") {
+        p4objects_rt->delete_conditional_rt(pipeline, vals[0]);
+      } else if (target == "flex") {
+        p4objects_rt->delete_flex_rt(pipeline, vals[0]);
+      } else {
+        std::cout << "Error: unsupported target for insert: " << target << std::endl;
+      }
+      const std::string prefix = items[0].substr(0, 3);
+      const std::string actual_name = items[0].substr(4);
+      if (prefix == "new" || prefix == "flx") {
+        if (id2newNodeName.erase(items[0]) != 1) {
+          std::cout << "Error: delete id from id2newNodeName fail: " << items[0] << std::endl;
+        }
+      }
+    }
+  }
+
+  std::ofstream ofs(json_file+".new", std::ios::out);
+  if (!ofs) {
+    std::cout << "Cannot open output file " << (json_file+".new") << "\n";
+  }
+  p4objects_rt->print_cfg(ofs);
+
+  std::cout << "table reconfig successfully" << std::endl;
+
+  return 0;
 }
 
 MatchErrorCode

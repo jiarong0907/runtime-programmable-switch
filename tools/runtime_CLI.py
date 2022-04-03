@@ -2255,6 +2255,20 @@ class RuntimeAPI(cmd.Cmd):
         return self._complete_tables(text)
 
     @handle_bad_input
+    def do_runtime_reconfig(self, line):
+        "FlexCore runtime reconfigure the original program into new program: runtime_reconfig <json file>"
+        args = line.split()
+        self.exactly_n_args(args, 2)
+        json_file = args[0]
+        plan_file = args[1]
+
+        self.client.bm_mt_runtime_reconfig(0, json_file, plan_file)
+        load_json_config(json_path = json_file+".new") # TODO: For now, assuming client is on switch and current path is at the build folder
+
+    def complete_runtime_reconfig(self, text, line, start_index, end_index):
+        return self._complete_tables(text)
+
+    @handle_bad_input
     def do_act_prof_dump_member(self, line):
         "Display some information about a member: act_prof_dump_member <action profile name> <member handle>"
         args = line.split()
