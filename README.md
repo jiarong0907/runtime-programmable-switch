@@ -31,10 +31,6 @@ This is a runtime programmable software switch implemented based on the BMv2 mod
 
 ## Setup
 
-### Setup from scratch
-
-You can set up the VM environment either from scratch or with our VM.
-
 1. Download VM image of mininet-2.3.0-210211-ubuntu-18.04.5-server-amd64-ovf.zip from https://github.com/mininet/mininet/releases/
 2. Unzip the downloaded zip file and import the ovf to VirtualBox
 3. Add a network interface for the VM: Settings -> Network -> Adapter 2 -> check "Enable Network Adapter" -> Select "Host-only Adapter" in "Attached to" -> OK
@@ -101,9 +97,6 @@ cd ../../
 
 Then, you should be able to run examples under the folder `runtime-programmable-switch/runtime_examples/`. See more details in the following text.
 
-### Use our VM
-
-Download from here: <TBD>
 
 ## Running example
 We put examples in `runtime_examples/` to illustrate the usage of runtime reconfiguration. To reconfigure a running p4 program from the old version to the new version at runtime, the user needs to get three files ready: 1) the old p4 program, 2) the new p4 program, and 3) the reconfiguration plan.
