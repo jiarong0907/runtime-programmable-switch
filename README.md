@@ -68,7 +68,7 @@ sudo ldconfig
 cd ../../
 ```
 
-Then, you should be able to run examples under the folder `runtime-programmable-switch/runtime_examples/`. See below for more details.
+Then, you should be able to run examples under the folder `runtime-programmable-switch/runtime_examples/`. See more details in the following text.
 
 ## Use our VM
 
@@ -107,7 +107,7 @@ RuntimeCmd: runtime_reconfig multi_tenant_with_acl.p4.json command_ExecWO2W.txt
 Note that the two input files `multi_tenant_with_acl.p4.json` and `command_ExecWO2W.txt` are the new program's json and the plan respectively. Also, the working folder for the `simple_switch_CLI` is in `build/`, so the two files should exist in that folder when the command is submitted.
 
 ## Runtime Reconfig Plan file and primitives
-In our paper, we described algorithms to automatically generate reconfiguration plans for different levels of consistency. The modified simple\_switch target can accept reconfiguration commands along with the plan files at runtime. Continuing the above example, `command_ExecWO2W.txt` is such a plan file.
+We automatically generate reconfiguration plans for different consistency guarantees. The modified simple\_switch target can accept reconfiguration commands along with the plan files at runtime. Continuing the above example, `command_ExecWO2W.txt` is such a plan file.
 The plan file shows examples of primitives FlexCore can support, which we also list below:
 - Primitive `insert`:
   - `insert flex <pipeline> <node> null null`: To insert a FlexEdge node named `TE0` to a pipeline named `ingress` (without connecting to any other nodes at first), use command `insert flex flx_TE0 null null`.
