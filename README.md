@@ -131,4 +131,20 @@ RuntimeCmd: runtime_reconfig multi_tenant_with_acl.p4.json command_ExecWO2W.txt
 Note that the two input files `multi_tenant_with_acl.p4.json` and `command_ExecWO2W.txt` are the new program's json and the plan respectively. Also, the working folder for the `simple_switch_CLI` is in `build/`, so the two files should exist in that folder when the command is submitted.
 
 
+## Citing
+If you feel our paper and code is helpful, please consider citing our paper by:
+```
+@inproceedings {flexcore-xing,
+    author = {Jiarong Xing and Kuo-Feng Hsu and Matty Kadosh and Alan Lo and Yonatan Piasetzky and Arvind Krishnamurthy},
+    title = {Runtime Programmable Switches},
+    booktitle = {19th USENIX Symposium on Networked Systems Design and Implementation (NSDI 22)},
+    year = {2022}
+}
+```
 
+## Contact
+If you have any questions about of paper and the code, please contact us:
+```
+Jiarong Xing (jxing@rice.edu)
+Kuo-Feng Hsu (alex1230608@gmail.com)
+```
