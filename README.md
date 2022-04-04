@@ -70,7 +70,7 @@ sudo make install
 sudo ldconfig  # refresh shared library cache.
 cd ..
 
-git clone git@github.com:jiarong0907/runtime-programmable-switch.git
+git clone https://github.com/jiarong0907/runtime-programmable-switch.git
 cd runtime-programmable-switch
 bash travis/install-thrift.sh
 bash travis/install-nanomsg.sh
