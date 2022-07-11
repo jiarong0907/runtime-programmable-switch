@@ -169,6 +169,15 @@ Context::mt_runtime_reconfig(const std::string &json_file,
         }
         convert_id_to_name(id2newNodeName, vals, items+1, 2);
         id2newNodeName[items[0]] = p4objects_rt->insert_flex_rt(pipeline, vals[0], vals[1]);
+      } else if (target == "register_array") {
+        ss >> items[0] >> vals[0] >> vals[1];
+        const std::string prefix = items[0].substr(0, 3);
+        const std::string actual_name = items[0].substr(4);
+        if (prefix != "new") {
+          std::cout << "Error: inserted register_array should only have prefix 'new_'\n";
+        }
+        dup_check(id2newNodeName, items[0]);
+        id2newNodeName[items[0]] = p4objects_rt->insert_register_array_rt(actual_name, vals[0], vals[1]);
       } else {
         std::cout << "Error: unsupported target for insert: " << target << std::endl;
       }
@@ -189,6 +198,14 @@ Context::mt_runtime_reconfig(const std::string &json_file,
         ss >> pipeline >> items[0];
         convert_id_to_name(id2newNodeName, vals, items, 1);
         p4objects_rt->change_init_node_rt(pipeline, vals[0]);
+      } else if (target == "register_array_size") {
+        ss >> items[0] >> items[1];
+        convert_id_to_name(id2newNodeName, vals, items, 1);
+        p4objects_rt->change_register_array_size_rt(vals[0], items[1]);
+      } else if (target == "register_array_bitwidth") {
+        ss >> items[0] >> items[1];
+        convert_id_to_name(id2newNodeName, vals, items, 1);
+        p4objects_rt->change_register_array_bitwidth_rt(vals[0], items[1]);
       } else {
         std::cout << "Error: unsupported target for change: " << target << std::endl;
       }
@@ -209,6 +226,8 @@ Context::mt_runtime_reconfig(const std::string &json_file,
         p4objects_rt->delete_conditional_rt(pipeline, vals[0]);
       } else if (target == "flex") {
         p4objects_rt->delete_flex_rt(pipeline, vals[0]);
+      } else if (target == "register_array") {
+        p4objects_rt->delete_register_array_rt(vals[0]);
       } else {
         std::cout << "Error: unsupported target for insert: " << target << std::endl;
       }
@@ -219,6 +238,61 @@ Context::mt_runtime_reconfig(const std::string &json_file,
           std::cout << "Error: delete id from id2newNodeName fail: " << items[0] << std::endl;
         }
       }
+    } else if (op == "rehash") {
+        if (target != "register_array") {
+          std::cout << "Error: rehash command can only have register_array as its target" << std::endl;
+        }
+
+        constexpr int param_numbers = 13;
+        std::string tmp_items[param_numbers];
+        for (int i = 0; i < param_numbers; i++) {
+            ss >> tmp_items[i];
+        }
+
+        std::string tmp_val;
+
+        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[0], 1);
+        std::string target_register_array = tmp_val;
+
+        if (tmp_items[1] != "--according-to") {
+          std::cout << "Error: rehash commmand should have tag --according-to" << std::endl;
+        }
+
+        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[2], 1);
+        std::string recording_register_array = tmp_val;
+
+        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[3], 1);
+        std::string recording_last_pos_register_array = tmp_val;
+
+        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[4], 1);
+        std::string recording_counting_register_array = tmp_val;
+
+        if (tmp_items[5] != "--hash-function-for-counting") {
+          std::cout << "Error: rehash command should have tag --hash-function-for-counting" << std::endl;
+        }
+
+        std::string hash_function_for_counting = tmp_items[6];
+
+        if (tmp_items[7] != "--hash-function-for-target") {
+          std::cout << "Error: rehash command should have tag --hash-function-for-target" << std::endl;
+        }
+
+        std::string first_hash_function = tmp_items[8];
+        std::string second_hash_function = tmp_items[9];
+        std::string third_hash_function = tmp_items[10];
+        
+        if (tmp_items[11] != "--reset") {
+          std::cout << "Error: rehash command should have tag --reset" << std::endl;
+        }
+
+        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[12], 1);
+        std::string register_array_to_be_reset = tmp_val;
+
+        p4objects_rt->rehash_register_array(target_register_array, 
+                              recording_register_array, recording_last_pos_register_array, recording_counting_register_array,
+                              hash_function_for_counting,
+                              first_hash_function, second_hash_function, third_hash_function,
+                              register_array_to_be_reset);
     }
   }
 
