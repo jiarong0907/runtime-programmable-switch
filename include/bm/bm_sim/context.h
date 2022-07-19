@@ -66,6 +66,7 @@
 #include "runtime_interface.h"
 #include "lookup_structures.h"
 #include "device_id.h"
+#include "runtime_reconfig_error_codes.h"
 
 namespace bm {
 
@@ -182,12 +183,19 @@ class Context final {
                entry_handle_t *handle,
                int priority = -1  /*only used for ternary*/);
 
-  int
+  RuntimeReconfigErrorCode
   mt_runtime_reconfig(const std::string &json_file,
                       const std::string &plan_file,
                       LookupStructureFactory *lookup_factory,
                       const std::set<P4Objects::header_field_pair> &required_fields,
                       const P4Objects::ForceArith &arith_objects);
+
+  RuntimeReconfigErrorCode
+  mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
+                                  std::istream* plan_file_stream,
+                                  LookupStructureFactory *lookup_factory,
+                                  const std::set<P4Objects::header_field_pair> &required_fields,
+                                  const P4Objects::ForceArith &arith_objects);
 
   MatchErrorCode
   mt_set_default_action(const std::string &table_name,
@@ -498,6 +506,10 @@ class Context final {
   ErrorCodeMap get_error_codes() const;
 
   void send_swap_status_notification(SwapStatus status);
+
+  void print_runtime_cfg(std::ostream& os) {
+    p4objects_rt->print_cfg(os);
+  }
 
  private:  // data members
   cxt_id_t cxt_id{};

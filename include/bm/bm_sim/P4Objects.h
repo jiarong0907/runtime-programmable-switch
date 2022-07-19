@@ -342,15 +342,13 @@ class P4Objects {
   void delete_match_table_rt(const std::string &pipeline_name,
                              const std::string &name);
   void delete_register_array_rt(const std::string& name);
-  void rehash_register_array(const std::string& target_register_array,
-                             const std::string& recording_register_array, 
-                             const std::string& recording_last_pos_register_array, 
-                             const std::string& recording_counting_register_array,
-                             const std::string& hash_function_for_counting,
-                             const std::string& first_hash_function, 
-                             const std::string& second_hash_function, 
-                             const std::string& third_hash_function,
-                             const std::string& register_array_to_be_reset);
+  void rehash_register_array_rt(const std::string &target_register_array,
+                             const std::string &recording_register_array, 
+                             const std::string &recording_last_pos_register_array, 
+                             const std::string &recording_counting_register_array,
+                             const std::string &hash_function_for_counting,
+                             const std::vector<std::string> &pos_hash_functions,
+                             const std::string &register_array_to_be_reset);
   void insert_parse_state_rt(std::shared_ptr<P4Objects> p4objects_new,
                              const std::string &parser_name,
                              const std::string &name);
@@ -360,6 +358,10 @@ class P4Objects {
                             const std::string &dst_state_name);
 
   void print_cfg(std::ostream &os);
+
+  const Json::Value& get_cfg() {
+    return cfg_root;
+  }
 
  private:
   // The get_*_cfg are used during json parsing: they will throw a

@@ -109,3 +109,9 @@ vgcore*
 /nanomsg-1.0.0/
 /nnpy/
 /thrift-0.11.0/
+
+# vscode configuration
+.vscode/
+
+# idea configuration
+.idea/

@@ -19,6 +19,7 @@
  */
 
 #include <bm/bm_sim/context.h>
+#include <bm/bm_sim/logger.h>
 
 #include <cstring>
 #include <iostream>
@@ -76,7 +77,8 @@ Context::mt_add_entry(const std::string &table_name,
 }
 
 // helper function for FlexCore
-void convert_id_to_name(std::unordered_map<std::string, std::string> &id2newNodeName, 
+int 
+convert_id_to_name(std::unordered_map<std::string, std::string> &id2newNodeName, 
     std::string *out, std::string *in, int size) {
   for (int i = 0; i < size; i++) {
     if (in[i] == "null") {
@@ -89,55 +91,97 @@ void convert_id_to_name(std::unordered_map<std::string, std::string> &id2newNode
         || prefix == "flx") {
       if (id2newNodeName.find(in[i]) == id2newNodeName.end()) {
         std::cout << "Error: cannot find the id " << in[i] << " from id2newNodeName\n";
-        break;
+        BMLOG_ERROR("Error: cannot find the id {} from id2newNodeName", in[i]);
+        return 1;
       }
       out[i] = id2newNodeName[in[i]];
     } else if (prefix == "old") {
       out[i] = actual_name;
     } else {
       std::cout << "Error: prefix " << prefix << " has no match\n";
+      BMLOG_ERROR("Error: prefix {} has no match", prefix);
+      return 2;
     }
   }
+
+  return 0;
 }
 
 // helper function for FlexCore
-void dup_check(const std::unordered_map<std::string, std::string> &id2newNodeName, 
+int
+dup_check(const std::unordered_map<std::string, std::string> &id2newNodeName, 
     const std::string &name) {
   if (id2newNodeName.find(name) != id2newNodeName.end()) {
     std::cout << "Error: Duplicated id " << name << " from id2newNodeName\n";
+    BMLOG_ERROR("Error: Duplicated id {} from id2newNodeName", name);
+    return 1;
   }
+
+  return 0;
 }
 
-int
+int 
+hash_function_check(const std::string& name) {
+  if (!CalculationsMap::get_instance()->get_copy(name)) {
+    std::cout << "Error: can't find the hash function by name: " << name << std::endl;
+    BMLOG_ERROR("Error: can't find the hash function by name: {}", name);
+    return 1;
+  }
+
+  return 0; 
+}
+
+RuntimeReconfigErrorCode
 Context::mt_runtime_reconfig(const std::string &json_file,
                              const std::string &plan_file,
                              LookupStructureFactory *lookup_factory,
                              const std::set<header_field_pair> &required_fields,
                              const ForceArith &arith_objects) {
-  std::ifstream fs(json_file, std::ios::in);
-  if (!fs) {
+  std::ifstream json_file_stream(json_file, std::ios::in);
+  if (!json_file_stream) {
     std::cout << "JSON input file " << json_file << " cannot be opened\n";
-    return 2;
+    return RuntimeReconfigErrorCode::OPEN_JSON_FILE_FAIL;
   }
+ 
+  std::ifstream plan_file_stream(plan_file);
+  if (!plan_file_stream) {
+    std::cout << "Open plan failed: " << plan_file << std::endl;
+    return RuntimeReconfigErrorCode::OPEN_PLAN_FILE_FAIL;
+  }
+
+  RuntimeReconfigErrorCode reconfig_return_code =  
+         mt_runtime_reconfig_with_stream(&json_file_stream,
+                                         &plan_file_stream,
+                                         lookup_factory,
+                                         required_fields,
+                                         arith_objects);
+
+  if (reconfig_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+    return reconfig_return_code;
+  } else {
+    return RuntimeReconfigErrorCode::SUCCESS;
+  }
+}
+
+RuntimeReconfigErrorCode
+Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
+                                        std::istream* plan_file_stream,
+                                        LookupStructureFactory *lookup_factory,
+                                        const std::set<P4Objects::header_field_pair> &required_fields,
+                                        const P4Objects::ForceArith &arith_objects) {
   p4objects_new = std::make_shared<P4Objects>(std::cout, true);
-  int status = p4objects_new->init_objects(&fs, lookup_factory, device_id, cxt_id,
+  int status = p4objects_new->init_objects(json_file_stream, lookup_factory, device_id, cxt_id,
                                            notifications_transport,
                                            required_fields, arith_objects);
-  if (status) return status;
-
-  std::ifstream ifs(plan_file);
-  if (!ifs) {
-    std::cout << "Open plan failed: " << plan_file << std::endl;
-    return 3;
-  }
-
+  if (status) return RuntimeReconfigErrorCode::P4OBJECTS_INIT_FAIL;
+  
   std::string line;
   std::unordered_map<std::string, std::string> id2newNodeName;
   std::string op;
   std::string target;
   std::string pipeline;
   std::string items[3], vals[3];
-  while (std::getline(ifs, line)) {
+  while (std::getline(*plan_file_stream, line)) {
     sleep(1);
     std::stringstream ss(line);
     ss >> op >> target;
@@ -148,8 +192,12 @@ Context::mt_runtime_reconfig(const std::string &json_file,
         const std::string actual_name = items[0].substr(4);
         if (prefix != "new") {
           std::cout << "Error: inserted table should only have prefix 'new_'\n";
+          BMLOG_ERROR("Error: inserted table should only have prefix 'new_', but you enter {}", items[0]);
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
-        dup_check(id2newNodeName, items[0]);
+        if (dup_check(id2newNodeName, items[0])) {
+          return RuntimeReconfigErrorCode::DUP_CHECK_ERROR;
+        }
         id2newNodeName[items[0]] = p4objects_rt->insert_match_table_rt(p4objects_new, pipeline, actual_name, true);
       } else if (target == "cond") {
         ss >> pipeline >> items[0];
@@ -157,8 +205,12 @@ Context::mt_runtime_reconfig(const std::string &json_file,
         const std::string actual_name = items[0].substr(4);
         if (prefix != "new") {
           std::cout << "Error: inserted cond should only have prefix 'new_'\n";
+          BMLOG_ERROR("Error: inserted cond should only have prefix 'new_', but you enter {}", items[0]);
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
-        dup_check(id2newNodeName, items[0]);
+        if (dup_check(id2newNodeName, items[0])) {
+          return RuntimeReconfigErrorCode::DUP_CHECK_ERROR;
+        }
         id2newNodeName[items[0]] = p4objects_rt->insert_conditional_rt(p4objects_new, pipeline, actual_name, true);
       } else if (target == "flex") {
         ss >> pipeline >> items[0] >> items[1] >> items[2];
@@ -166,8 +218,15 @@ Context::mt_runtime_reconfig(const std::string &json_file,
         const std::string actual_name = items[0].substr(4);
         if (prefix != "flx") {
           std::cout << "Error: inserted flex should only have prefix 'flx_'\n";
+          BMLOG_ERROR("Error: inserted flex should only have prefix 'flx_', but you enter {}", items[0]);
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
-        convert_id_to_name(id2newNodeName, vals, items+1, 2);
+        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items+1, 2);
+        if (convert_id_return_code == 1) {
+          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+        } else if (convert_id_return_code == 2) {
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        }
         id2newNodeName[items[0]] = p4objects_rt->insert_flex_rt(pipeline, vals[0], vals[1]);
       } else if (target == "register_array") {
         ss >> items[0] >> vals[0] >> vals[1];
@@ -175,39 +234,77 @@ Context::mt_runtime_reconfig(const std::string &json_file,
         const std::string actual_name = items[0].substr(4);
         if (prefix != "new") {
           std::cout << "Error: inserted register_array should only have prefix 'new_'\n";
+          BMLOG_ERROR("Error: inserted register_array should only have prefix 'new_', but you enter {}", items[0]);
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
-        dup_check(id2newNodeName, items[0]);
+        if (dup_check(id2newNodeName, items[0])) {
+          return RuntimeReconfigErrorCode::DUP_CHECK_ERROR;
+        }
         id2newNodeName[items[0]] = p4objects_rt->insert_register_array_rt(actual_name, vals[0], vals[1]);
       } else {
         std::cout << "Error: unsupported target for insert: " << target << std::endl;
+        BMLOG_ERROR("Error: unsupported target for insert: {}", target);
+        return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
     } else if (op == "change") {
       if (target == "tabl") {
         ss >> pipeline >> items[0] >> items[2] >> items[1];
-        convert_id_to_name(id2newNodeName, vals, items, 2);
+        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 2);
+        if (convert_id_return_code == 1) {
+          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+        } else if (convert_id_return_code == 2) {
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        }
         p4objects_rt->change_table_next_node_rt(pipeline, vals[0], items[2], vals[1]);
       } else if (target == "cond") {
         ss >> pipeline >> items[0] >> items[2] >> items[1];
-        convert_id_to_name(id2newNodeName, vals, items, 2);
+        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 2);
+        if (convert_id_return_code == 1) {
+          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+        } else if (convert_id_return_code == 2) {
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        }
         p4objects_rt->change_conditional_next_node_rt(pipeline, vals[0], items[2], vals[1]);
       } else if (target == "flex") {
         ss >> pipeline >> items[0] >> items[2] >> items[1];
-        convert_id_to_name(id2newNodeName, vals, items, 2);
+        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 2);
+        if (convert_id_return_code == 1) {
+          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+        } else if (convert_id_return_code == 2) {
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        }
         p4objects_rt->change_conditional_next_node_rt(pipeline, vals[0], items[2], vals[1]);
       } else if (target == "init") {
         ss >> pipeline >> items[0];
-        convert_id_to_name(id2newNodeName, vals, items, 1);
+        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
+        if (convert_id_return_code == 1) {
+          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+        } else if (convert_id_return_code == 2) {
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        }
         p4objects_rt->change_init_node_rt(pipeline, vals[0]);
       } else if (target == "register_array_size") {
         ss >> items[0] >> items[1];
-        convert_id_to_name(id2newNodeName, vals, items, 1);
+        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
+        if (convert_id_return_code == 1) {
+          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+        } else if (convert_id_return_code == 2) {
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        }
         p4objects_rt->change_register_array_size_rt(vals[0], items[1]);
       } else if (target == "register_array_bitwidth") {
         ss >> items[0] >> items[1];
-        convert_id_to_name(id2newNodeName, vals, items, 1);
+        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
+        if (convert_id_return_code == 1) {
+          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+        } else if (convert_id_return_code == 2) {
+          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        }
         p4objects_rt->change_register_array_bitwidth_rt(vals[0], items[1]);
       } else {
         std::cout << "Error: unsupported target for change: " << target << std::endl;
+        BMLOG_ERROR("Error: unsupported target for change: {}", target);
+        return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
     } else if (op == "trigger") {
       if (target == "on") {
@@ -216,10 +313,18 @@ Context::mt_runtime_reconfig(const std::string &json_file,
         p4objects_rt->flex_trigger_rt(false);
       } else {
         std::cout << "Error: unsupported target for trigger: " << target << std::endl;
+        BMLOG_ERROR("Error: unsupported target for trigger: {}", target);
+        return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
     } else if (op == "delete") {
       ss >> pipeline >> items[0];
-      convert_id_to_name(id2newNodeName, vals, items, 1);
+      int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
+      if (convert_id_return_code == 1) {
+          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+      } else if (convert_id_return_code == 2) {
+        return RuntimeReconfigErrorCode::PREFIX_ERROR;
+      }
+
       if (target == "tabl") {
         p4objects_rt->delete_match_table_rt(pipeline, vals[0]);
       } else if (target == "cond") {
@@ -229,82 +334,148 @@ Context::mt_runtime_reconfig(const std::string &json_file,
       } else if (target == "register_array") {
         p4objects_rt->delete_register_array_rt(vals[0]);
       } else {
-        std::cout << "Error: unsupported target for insert: " << target << std::endl;
+        std::cout << "Error: unsupported target for delete: " << target << std::endl;
+        BMLOG_ERROR("Error: unsupported target for delete: {}", target);
+        return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
       const std::string prefix = items[0].substr(0, 3);
       const std::string actual_name = items[0].substr(4);
       if (prefix == "new" || prefix == "flx") {
         if (id2newNodeName.erase(items[0]) != 1) {
           std::cout << "Error: delete id from id2newNodeName fail: " << items[0] << std::endl;
+          BMLOG_ERROR("Error: delete id from id2newNodeName fail: {}", items[0]);
+          return RuntimeReconfigErrorCode::DELETE_ID_FAIL;
         }
       }
     } else if (op == "rehash") {
-        if (target != "register_array") {
-          std::cout << "Error: rehash command can only have register_array as its target" << std::endl;
+      if (target != "register_array") {
+        std::cout << "Error: rehash command can only have register_array as its target" << std::endl;
+        BMLOG_ERROR("Error: rehash command can only have register_array as its target, but you enter {}", target);
+        return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
+      }
+
+      std::vector<std::string> parsed_params;
+      std::string delimiter = " ";
+      size_t start = 0;
+      auto end = line.find(delimiter);
+      while (end != std::string::npos)
+      {
+        if (!line.substr(start, end - start).empty()) {
+          parsed_params.push_back(line.substr(start, end - start));
         }
+        start = end + delimiter.length();
+        end = line.find(delimiter, start);
+      }
+      if (!line.substr(start).empty()) {
+        parsed_params.push_back(line.substr(start));
+      }
 
-        constexpr int param_numbers = 13;
-        std::string tmp_items[param_numbers];
-        for (int i = 0; i < param_numbers; i++) {
-            ss >> tmp_items[i];
+      std::string tmp_val;
+      int convert_id_return_code = 0;
+
+      convert_id_return_code = convert_id_to_name(id2newNodeName, &tmp_val, &parsed_params[0], 1);
+      if (convert_id_return_code == 1) {
+        return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+      } else if (convert_id_return_code == 2) {
+        return RuntimeReconfigErrorCode::PREFIX_ERROR;
+      }
+      std::string target_register_array = tmp_val;
+
+      if (parsed_params[1] != "--according-to") {
+        std::cout << "Error: rehash commmand should have tag --according-to" << std::endl;
+        BMLOG_ERROR("Error: rehash commmand should have tag --according-to just after the <target_register_array> parameter");
+        return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
+      }
+
+      convert_id_return_code = convert_id_to_name(id2newNodeName, &tmp_val, &parsed_params[2], 1);
+      if (convert_id_return_code == 1) {
+        return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+      } else if (convert_id_return_code == 2) {
+        return RuntimeReconfigErrorCode::PREFIX_ERROR;
+      }
+      std::string recording_register_array = tmp_val;
+
+      convert_id_return_code = convert_id_to_name(id2newNodeName, &tmp_val, &parsed_params[3], 1);
+      if (convert_id_return_code == 1) {
+        return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+      } else if (convert_id_return_code == 2) {
+        return RuntimeReconfigErrorCode::PREFIX_ERROR;
+      }
+      std::string recording_last_pos_register_array = tmp_val;
+
+      convert_id_return_code = convert_id_to_name(id2newNodeName, &tmp_val, &parsed_params[4], 1);
+      if (convert_id_return_code == 1) {
+        return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+      } else if (convert_id_return_code == 2) {
+        return RuntimeReconfigErrorCode::PREFIX_ERROR;
+      }
+      std::string recording_counting_register_array = tmp_val;
+
+      if (parsed_params[5] != "--hash-function-for-counting") {
+        std::cout << "Error: rehash command should have tag --hash-function-for-counting" << std::endl;
+        BMLOG_ERROR("Error: rehash command should have tag --hash-function-for-counting just after the "
+                    "<recording_counting_register_array> parameter");
+        return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
+      }
+
+      if (hash_function_check(parsed_params[6])) {
+        return RuntimeReconfigErrorCode::INVALID_HASH_FUNCTION_NAME_ERROR;
+      }
+      std::string hash_function_for_counting = parsed_params[6];
+
+      if (parsed_params[7] != "--hash-function-for-target") {
+        std::cout << "Error: rehash command should have tag --hash-function-for-target" << std::endl;
+        BMLOG_ERROR("Error: rehash command should have tag --hash-function-for-target just after the "
+                    "<hash_function_for_target> parameter");
+        return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
+      }
+
+      std::vector<std::string> pos_hash_functions;
+      int i = 8;
+      while (parsed_params[i] != "--reset") {
+        if (hash_function_check(parsed_params[i])) {
+          return RuntimeReconfigErrorCode::INVALID_HASH_FUNCTION_NAME_ERROR;
         }
-
-        std::string tmp_val;
-
-        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[0], 1);
-        std::string target_register_array = tmp_val;
-
-        if (tmp_items[1] != "--according-to") {
-          std::cout << "Error: rehash commmand should have tag --according-to" << std::endl;
-        }
-
-        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[2], 1);
-        std::string recording_register_array = tmp_val;
-
-        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[3], 1);
-        std::string recording_last_pos_register_array = tmp_val;
-
-        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[4], 1);
-        std::string recording_counting_register_array = tmp_val;
-
-        if (tmp_items[5] != "--hash-function-for-counting") {
-          std::cout << "Error: rehash command should have tag --hash-function-for-counting" << std::endl;
-        }
-
-        std::string hash_function_for_counting = tmp_items[6];
-
-        if (tmp_items[7] != "--hash-function-for-target") {
-          std::cout << "Error: rehash command should have tag --hash-function-for-target" << std::endl;
-        }
-
-        std::string first_hash_function = tmp_items[8];
-        std::string second_hash_function = tmp_items[9];
-        std::string third_hash_function = tmp_items[10];
-        
-        if (tmp_items[11] != "--reset") {
+        pos_hash_functions.push_back(parsed_params[i]);
+        i++;
+        if (i >= parsed_params.size()) {
           std::cout << "Error: rehash command should have tag --reset" << std::endl;
+          BMLOG_ERROR("Error: rehash command should have tag --reset");
+          return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
         }
+      }
 
-        convert_id_to_name(id2newNodeName, &tmp_val, &tmp_items[12], 1);
-        std::string register_array_to_be_reset = tmp_val;
+      if (i == 8) {
+        std::cout << "Error: you should provide at least one hash function for rehashing target register array" << std::endl;
+        BMLOG_ERROR("Error: you should provide at least one hash function for rehashing target register array");
+        return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
+      }
 
-        p4objects_rt->rehash_register_array(target_register_array, 
-                              recording_register_array, recording_last_pos_register_array, recording_counting_register_array,
-                              hash_function_for_counting,
-                              first_hash_function, second_hash_function, third_hash_function,
-                              register_array_to_be_reset);
+      if (i == parsed_params.size() - 1) {
+        std::cout << "Error: you should specify a time stamp register array to be reset" << std::endl;
+        BMLOG_ERROR("Error: you should specify a time stamp register array to be reset");
+        return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
+      }
+
+      convert_id_return_code = convert_id_to_name(id2newNodeName, &tmp_val, &parsed_params[i + 1], 1);
+      if (convert_id_return_code == 1) {
+        return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
+      } else if (convert_id_return_code == 2) {
+        return RuntimeReconfigErrorCode::PREFIX_ERROR;
+      }
+      std::string register_array_to_be_reset = tmp_val;
+
+      p4objects_rt->rehash_register_array_rt(target_register_array, 
+                                            recording_register_array, 
+                                            recording_last_pos_register_array, 
+                                            recording_counting_register_array,
+                                            hash_function_for_counting,
+                                            pos_hash_functions,
+                                            register_array_to_be_reset);
     }
   }
 
-  std::ofstream ofs(json_file+".new", std::ios::out);
-  if (!ofs) {
-    std::cout << "Cannot open output file " << (json_file+".new") << "\n";
-  }
-  p4objects_rt->print_cfg(ofs);
-
-  std::cout << "table reconfig successfully" << std::endl;
-
-  return 0;
+  return RuntimeReconfigErrorCode::SUCCESS;
 }
 
 MatchErrorCode

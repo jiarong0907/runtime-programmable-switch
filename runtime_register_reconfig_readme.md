@@ -8,7 +8,7 @@
     - `delete register_array <name>`
     - `change register_array_size <size>`
     - `change register_array_bitwidth <width>`
-    - `rehash register_array <target_register_array> --according-to <recording_register_array> <recording_last_pos_register_array> <recording_counting_register_array> --hash-function-for-counting <hash_function> --hash-function-for-target <first_hash_function> <second_hash_function> <third_hash_function> --reset <time_stamp_register_array>`
+    - `rehash register_array <target_register_array> --according-to <recording_register_array> <recording_last_pos_register_array> <recording_counting_register_array> --hash-function-for-counting <hash_function> --hash-function-for-target <first_pos_hash_function> <second_pos_hash_function> ... <nth_pos_hash_function> --reset <time_stamp_register_array>`
 
 - New demo:
     - Defence SYN flooding attack [1]

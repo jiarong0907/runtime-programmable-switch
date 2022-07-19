@@ -84,6 +84,7 @@
 #include "queue.h"
 #include "runtime_interface.h"
 #include "target_parser.h"
+#include "logger.h"
 
 namespace bm {
 
@@ -830,10 +831,62 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
   mt_runtime_reconfig(cxt_id_t cxt_id,
                       const std::string &json_file,
                       const std::string &plan_file) {
-    return contexts.at(cxt_id).mt_runtime_reconfig(json_file, plan_file,
-                                                   get_lookup_factory(),
-                                                   required_fields,
-						   arith_objects);
+    int reconfig_return_code = static_cast<int>(
+      contexts.at(cxt_id).mt_runtime_reconfig(json_file, plan_file,
+                                                  get_lookup_factory(),
+                                                  required_fields,
+                                                  arith_objects)
+                          );
+
+    if (reconfig_return_code != static_cast<int>(RuntimeReconfigErrorCode::SUCCESS)) {
+      return reconfig_return_code;
+    }
+
+    std::ofstream ofs(json_file+".new", std::ios::out);
+    if (!ofs) {
+      std::cout << "Cannot open output file " << (json_file+".new") << "\n";
+      BMLOG_ERROR("Error: cannot open output file: {}", json_file + ".new");
+      return static_cast<int>(RuntimeReconfigErrorCode::OPEN_OUTPUT_FILE_FAIL);
+    }
+
+    contexts.at(cxt_id).print_runtime_cfg(ofs);
+
+    std::cout << "table reconfig successfully" << std::endl;
+    return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
+  }
+
+  int
+  mt_runtime_reconfig_with_stream(cxt_id_t cxt_id,
+                                  std::istream* json_file_stream,
+                                  std::istream* plan_file_stream,
+                                  const std::string& output_json_file = "") {
+    int reconfig_return_code = static_cast<int>(
+      contexts.at(cxt_id).mt_runtime_reconfig_with_stream(json_file_stream, plan_file_stream,
+                                                          get_lookup_factory(),
+                                                          required_fields,
+                                                          arith_objects)
+                                  );
+
+    if (reconfig_return_code != static_cast<int>(RuntimeReconfigErrorCode::SUCCESS)) {
+      return reconfig_return_code;
+    }
+
+    if (output_json_file.empty()) {
+      return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
+    }
+
+    std::ofstream ofs(output_json_file+".new", std::ios::out);
+    if (!ofs) {
+      std::cout << "Cannot open output file " << (output_json_file+".new") << "\n";
+      BMLOG_ERROR("Error: cannot open output file: {}", output_json_file + ".new");
+      return static_cast<int>(RuntimeReconfigErrorCode::OPEN_OUTPUT_FILE_FAIL);
+    }
+
+    contexts.at(cxt_id).print_runtime_cfg(ofs);
+
+    std::cout << "table reconfig successfully" << std::endl;
+    return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
+
   }
 
   // ---------- End RuntimeInterface ----------

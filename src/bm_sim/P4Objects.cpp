@@ -22,6 +22,7 @@
 #include <bm/bm_sim/P4Objects.h>
 #include <bm/bm_sim/phv.h>
 #include <bm/bm_sim/actions.h>
+#include <bm/bm_sim/logger.h>
 
 #include <iostream>
 #include <istream>
@@ -2663,6 +2664,7 @@ P4Objects::map_json_value(const std::string &type, const std::string &name,
   } else if (type == "register_array") {
     if (cfg_register_arrays_map.find(name) != cfg_register_arrays_map.end()) {
       std::cout << "map_json_value: duplicated register_array name: " << name << std::endl;
+      BMLOG_ERROR("map_json_value: duplicated register_array name: {}", name);
     } else {
       cfg_register_arrays_map[name] = val;
     }
@@ -2717,6 +2719,7 @@ P4Objects::add_json_value(const std::string &type, const std::string &name,
   } else if (type == "register_array") {
     if (cfg_register_arrays_map.find(name) != cfg_register_arrays_map.end()) {
       std::cout << "add_json_value: duplicated register_array name: " << name << std::endl;
+      BMLOG_ERROR("add_json_value: duplicated register_array name: {}", name);
     } else {
       Json::Value& added = cfg_root["register_arrays"].append(val);
       map_json_value("register_array", name, &added);
@@ -2758,16 +2761,24 @@ P4Objects::remove_json_value(const std::string &type, const std::string &name) {
   } else if (type == "register_array"){
     if (cfg_register_arrays_map.find(name) == cfg_register_arrays_map.end()) {
       std::cout << "remove_json_value: no register_array name: " << name << std::endl;
+      BMLOG_ERROR("remove_json_value: no register_array name: {}", name);
     } else {
-      Json::Value newArray = Json::arrayValue;
-      for (const auto& cfg_register_array : cfg_root["register_arrays"]) {
-        if (cfg_register_array["name"] != name) {
-          newArray.append(cfg_register_array);
+      Json::ArrayIndex register_array_index = 0;
+      for (auto& cfg_register_array : cfg_root["register_arrays"]) {
+        if (cfg_register_array["name"] == name) {
+          Json::Value removed;
+          // please note that "removeIndex" will reallocate the cfg_root["register_arrays"] after the remove operation
+          cfg_root["register_arrays"].removeIndex(register_array_index, &removed);
+          break;
         }
-      }
-      cfg_root["register_arrays"] = newArray;
-      cfg_register_arrays_map.erase(name);
 
+        register_array_index++;
+      }
+
+      // update the cfg_register_arrays_map, because: 
+      // (1) we need to remove the deleted register_array with name "name"
+      // (2) underlying memory of cfg_root["register_arrays"] is changed, due to the effect of "removeIndex" in previous steps
+      cfg_register_arrays_map.erase(name);
       for (auto& cfg_register_array : cfg_root["register_arrays"]) {
         cfg_register_arrays_map[cfg_register_array["name"].asString()] = &cfg_register_array;
       }
@@ -2813,6 +2824,7 @@ P4Objects::modify_json_value(const std::string &type, const std::string &name,
   } else if (type == "register_array") {
     if (cfg_register_arrays_map.find(name) == cfg_register_arrays_map.end()) {
       std::cout << "modify_json_value: cannot find register_array name: " << name << std::endl;
+      BMLOG_ERROR("modify_json_value: cannot find register_array name: {}", name);
     } else {
       (*cfg_register_arrays_map[name])[field_name] = val;
     }
@@ -2935,6 +2947,14 @@ P4Objects::get_json_value(const std::string &type, const std::string &name) {
       return nullptr;
     } else {
       return cfg_parse_states_map[cfg_parse_state_id];
+    }
+  } else if (type == "register_array") {
+    if (cfg_register_arrays_map.find(name) == cfg_register_arrays_map.end()) {
+      std::cout << "get_json_value: cannot find register_array name: " << name << std::endl;
+      BMLOG_ERROR("get_json_value: cannot find register_array name: {}", name);
+      return nullptr;
+    } else {
+      return cfg_register_arrays_map[name];
     }
   } else {
     std::cout << "get_json_value: type not supported" << std::endl;
@@ -3350,25 +3370,20 @@ P4Objects::change_register_array_size_rt(const std::string& name,
     std::vector<Register> registers_new;
     registers_new.reserve(new_register_array_size);
     auto lock = register_array->unique_lock();
-    int i = 0;
-    while (i < new_register_array_size) {
+    for (int i = 0; i < new_register_array_size; i++) {
       if (i < ori_register_array_size) {
         registers_new.push_back(register_array->at(i));
       } else {
         registers_new.emplace_back(register_array->get_bitwidth(), register_array);
       }
-
-      i++;
     }
     register_array->reset_registers_with(registers_new);
   } else {
     std::vector<Register> registers_new;
     registers_new.reserve(new_register_array_size);
     auto lock = register_array->unique_lock();
-    int i = 0;
-    while (i < new_register_array_size) {
+    for (int i = 0; i < new_register_array_size; i++) {
       registers_new.push_back(register_array->at(i));
-      i++;
     }
     register_array->reset_registers_with(registers_new);
   }
@@ -3432,26 +3447,58 @@ P4Objects::delete_register_array_rt(const std::string& name) {
   remove_json_value("register_array", name);
 }
 
+//! Rehashes the target register array referring to the provided parameters.
+//! 
+//! It's designed for the convenience of SYN_flooding_protection's demonstration. 
+//! The target_register_array is the original counting bloom filter for the 
+//! defence of malicious SYN flooding attacks, which we need to enlarge this register array to
+//! degrade the error rate of protection during reconfiguration. 
+//! To this end, some additional parameters are needed, such as a register array storing the clients' IP addresses ("recording_register_array") and 
+//! another container recording the frequency of access for each client ("recording_counting_register_array").
+//! 
+//!
+//! Runtime command:
+//! @code
+//! rehash register_array <target_register_array> 
+//! --according-to <recording_register_array> <recording_last_pos_register_array> <recording_counting_register_array> 
+//! --hash-function-for-counting <hash_function> 
+//! --hash-function-for-target <first_pos_hash_function> <second_pos_hash_function> ... <nth_pos_hash_function> 
+//! --reset <time_stamp_register_array>
+//!
+//! @endcode
+//!
+//! @param target_register_array the register array to be rehashed.
+//! @param recording_register_array  the register array recording the source of target register array.
+//! (As for demo SYN_flooding_protection, it stores the IP address of incoming clients.)
+//! @param recording_last_pos_register_array the register array of size 1, which indicates the last position of recording_register_array.
+//! @param recording_counting_register_array the register array counting the number of accesses.
+//! (As for demo SYN_flooding_protection, each SYN message will increase the counting by 1. In contrast, each ACK message will result in opposite effect.)
+//! @param hash_function_for_counting the hash function for recording_counting_register_array. 
+//! (As for demo SYN_flooding_protection, hash(IPv4_address) => pos_in_recording_counting_register_array.)
+//! @param pos_hash_functions the hash functions for target_register_array.
+//! (As for demo SYN_flooding_protection, hash(IPv4_address) => pos_in_target_register_array.)
+//! @param register_array_to_be_reset the register array to be reset after rehashing.
+//! (As for demo SYN_flooding_protection, we reset the time stamp register array after each rehashing.)
 void 
-P4Objects::rehash_register_array(const std::string &target_register_array,
-                           const std::string &recording_register_array,
-                           const std::string &recording_last_pos_register_array,
-                           const std::string &recording_counting_register_array,
-                           const std::string &hash_function_for_counting,
-                           const std::string &first_hash_function,
-                           const std::string &second_hash_function,
-                           const std::string &third_hash_function,
-                           const std::string &register_array_to_be_reset) {
+P4Objects::rehash_register_array_rt(const std::string &target_register_array,
+                                  const std::string &recording_register_array,
+                                  const std::string &recording_last_pos_register_array,
+                                  const std::string &recording_counting_register_array,
+                                  const std::string &hash_function_for_counting,
+                                  const std::vector<std::string> &pos_hash_functions,
+                                  const std::string &register_array_to_be_reset) {
   RegisterArray* target_register_array_ptr = get_register_array(target_register_array);
   RegisterArray* recording_register_array_ptr = get_register_array(recording_register_array);
   RegisterArray* recording_last_pos_register_array_ptr = get_register_array(recording_last_pos_register_array);
   RegisterArray* recording_counting_register_array_ptr = get_register_array(recording_counting_register_array);
   RegisterArray* register_array_to_be_reset_ptr = get_register_array(register_array_to_be_reset);
 
-  std::unique_ptr<CalculationsMap::MyC> hash_function_for_counting_ptr = CalculationsMap::get_instance()->get_copy(hash_function_for_counting);
-  std::unique_ptr<CalculationsMap::MyC> first_hash_function_ptr = CalculationsMap::get_instance()->get_copy(first_hash_function);
-  std::unique_ptr<CalculationsMap::MyC> second_hash_function_ptr = CalculationsMap::get_instance()->get_copy(second_hash_function);
-  std::unique_ptr<CalculationsMap::MyC> third_hash_function_ptr = CalculationsMap::get_instance()->get_copy(third_hash_function);
+  std::unique_ptr<CalculationsMap::MyC> hash_function_for_counting_ptr = 
+                                          CalculationsMap::get_instance()->get_copy(hash_function_for_counting);
+  std::vector<std::unique_ptr<CalculationsMap::MyC> > pos_hash_functions_ptr;
+  for (const auto& pos_hash_function : pos_hash_functions) {
+    pos_hash_functions_ptr.push_back(CalculationsMap::get_instance()->get_copy(pos_hash_function));
+  }
 
   union converter {
     char char_array[4];
@@ -3483,19 +3530,13 @@ P4Objects::rehash_register_array(const std::string &target_register_array,
                                                                                     recording_counting_register_array_ptr->size()
                                                                               ).get<uint64_t>();
 
-      uint64_t recording_pos_in_target_register_array_0 = first_hash_function_ptr->output(conv.char_array, 4) % 
-                                                            target_register_array_ptr->size();
-      uint64_t recording_pos_in_target_register_array_1 = second_hash_function_ptr->output(conv.char_array, 4) % 
-                                                            target_register_array_ptr->size();
-      uint64_t recording_pos_in_target_register_array_2 = third_hash_function_ptr->output(conv.char_array, 4) % 
-                                                            target_register_array_ptr->size();
-
-      target_register_array_ptr->at(recording_pos_in_target_register_array_0).set(recording_counting + 
-                                                                                  target_register_array_ptr->at(recording_pos_in_target_register_array_0).get<uint64_t>());
-      target_register_array_ptr->at(recording_pos_in_target_register_array_1).set(recording_counting + 
-                                                                                  target_register_array_ptr->at(recording_pos_in_target_register_array_1).get<uint64_t>());
-      target_register_array_ptr->at(recording_pos_in_target_register_array_2).set(recording_counting + 
-                                                                                  target_register_array_ptr->at(recording_pos_in_target_register_array_2).get<uint64_t>());
+      for (const auto& pos_hash_function_ptr : pos_hash_functions_ptr) {
+        uint64_t recording_pos_in_target_register_array = pos_hash_function_ptr->output(conv.char_array, 4) % 
+                                                    target_register_array_ptr->size();
+        target_register_array_ptr->at(recording_pos_in_target_register_array).set(recording_counting + 
+                                                                                    target_register_array_ptr->at(
+                                                                                    recording_pos_in_target_register_array).get<uint64_t>());
+      }
     }
   }
  
