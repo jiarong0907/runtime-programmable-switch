@@ -71,6 +71,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 #include <boost/thread/shared_mutex.hpp>
 

@@ -431,7 +431,7 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
       }
 
       std::vector<std::string> pos_hash_functions;
-      int i = 8;
+      size_t i = 8;
       while (parsed_params[i] != "--reset") {
         if (hash_function_check(parsed_params[i])) {
           return RuntimeReconfigErrorCode::INVALID_HASH_FUNCTION_NAME_ERROR;
