@@ -1,9 +1,0 @@
-// packet_out: extern for output packet
-extern packet_out {
-  void emit<T>(in T hdr);
-}
-
-apply {
-  // insert headers into pkt if valid
-  packet.emit(hdr.ethernet);
-}

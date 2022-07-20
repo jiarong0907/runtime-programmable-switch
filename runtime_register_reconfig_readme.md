@@ -17,10 +17,10 @@
 ---
 ### How to run the demo:
 1. Recompile the bmv2 from the updated source code.
-2. Go to `runtime_examples/SYN_flooding_protection_old_utils/app/`.
+2. Go to `runtime_examples/SYN_flooding_protection/app/`.
 3. Run `./run.sh`. It will build up a network comprising of three hosts (`h1, h2, h3`) and one switch (`s1`). 
 
-    (During initialization, `s1` will load `old_SYN_flooding_protection_with_mark.p4`)
+    (During initialization, `s1` will load `old_SYN_flooding_protection.p4`)
 ```
 network architecture:
 
@@ -65,9 +65,9 @@ You will see some outputs like
 This shows that, when the bloom filter's capacity is low (128 in this case), it might be possible for switch to prevent some legal users (such as `h2`) from getting in touch with the server (in this case `h3`, at `10.0.1.22`).
 
 6. Then, try to enlarge the bloom filter. Open a new terminal and go to `build` folder.
-7. In this new terminal, run `simple_switch_CLI --thrift-port 9090` and, then, `runtime_reconfig new_SYN_flooding_protection_with_mark.p4.json reconfiguration_command.txt`
+7. In this new terminal, run `simple_switch_CLI --thrift-port 9090` and, then, `runtime_reconfig new_SYN_flooding_protection.json reconfiguration_command.txt`
 
-    (You should compile `new_SYN_flooding_protection_with_mark.p4` in advance.)
+    (You should compile `new_SYN_flooding_protection.p4` in advance.)
 8. Please wait the reconfiguration to complete.
 
 Now, you can see some outputs like

@@ -21,7 +21,7 @@
           }
         },
         "configs": {
-          "s1": "old_SYN_flooding_protection_with_mark.p4"
+          "s1": "old_SYN_flooding_protection.p4"
         },
         "servers": ["localhost"],
         "before": {

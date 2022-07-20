@@ -52,4 +52,9 @@ testdata/swap_2.json \
 testdata/queueing.json \
 testdata/recirc.json \
 testdata/parser_error.p4 \
-testdata/parser_error.json
+testdata/parser_error.json \
+testdata/runtime_register_reconfig/new_SYN_flooding_protection.json \
+testdata/runtime_register_reconfig/old_SYN_flooding_protection.json \
+testdata/runtime_register_reconfig/reconfiguration_command.txt \
+testdata/runtime_register_reconfig/old_SYN_flooding_protection.p4 \
+testdata/runtime_register_reconfig/new_SYN_flooding_protection.p4

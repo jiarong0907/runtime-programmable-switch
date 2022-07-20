@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <bm/bm_apps/packet_pipe.h>
+#include <bm/bm_sim/data.h>
 
 #include <string>
 #include <memory>
@@ -93,7 +94,113 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
         }
 
         void init_switch_content_populate(SimpleSwitch* sw) {
+            // config table MyIngress.check_ports
+            {
+                // table_add check_ports set_direction 1 3 => 0
+                std::vector<MatchKeyParam> match_key_0;
+                match_key_0.emplace_back(MatchKeyParam::Type::EXACT, std::string("\x01", 1));
+                match_key_0.emplace_back(MatchKeyParam::Type::EXACT, std::string("\x03", 1));
+                ActionData data_0;
+                data_0.push_back_action_data(0);
+                entry_handle_t handle_0;
+                sw->mt_add_entry(0, "MyIngress.check_ports", 
+                                    match_key_0, "MyIngress.set_direction", 
+                                    std::move(data_0), &handle_0);
+            }
+           
+            {
+                // table_add check_ports set_direction 2 3 => 0
+                std::vector<MatchKeyParam> match_key_1;
+                match_key_1.emplace_back(MatchKeyParam::Type::EXACT, std::string("\x02", 1));
+                match_key_1.emplace_back(MatchKeyParam::Type::EXACT, std::string("\x03", 1));
+                ActionData data_1;
+                data_1.push_back_action_data(0);
+                entry_handle_t handle_1;
+                sw->mt_add_entry(0, "MyIngress.check_ports", 
+                                    match_key_1, "MyIngress.set_direction", 
+                                    std::move(data_1), &handle_1);
+            }
             
+            {
+                // table_add check_ports set_direction 3 1 => 1
+                std::vector<MatchKeyParam> match_key_2;
+                match_key_2.emplace_back(MatchKeyParam::Type::EXACT, std::string("\x03", 1));
+                match_key_2.emplace_back(MatchKeyParam::Type::EXACT, std::string("\x01", 1));
+                ActionData data_2;
+                data_2.push_back_action_data(1);
+                entry_handle_t handle_2;
+                sw->mt_add_entry(0, "MyIngress.check_ports", 
+                                    match_key_2, "MyIngress.set_direction", 
+                                    std::move(data_2), &handle_2);
+            }
+            
+            {
+                // table_add check_ports set_direction 3 2 => 1
+                std::vector<MatchKeyParam> match_key_3;
+                match_key_3.emplace_back(MatchKeyParam::Type::EXACT, std::string("\x03", 1));
+                match_key_3.emplace_back(MatchKeyParam::Type::EXACT, std::string("\x02", 1));
+                ActionData data_3;
+                data_3.push_back_action_data(1);
+                entry_handle_t handle_3;
+                sw->mt_add_entry(0, "MyIngress.check_ports", 
+                                    match_key_3, "MyIngress.set_direction", 
+                                    std::move(data_3), &handle_3);
+            }
+           
+
+            // config table MyIngress.ipv4_lpm
+            {
+                // table_add ipv4_lpm ipv4_forward 10.0.1.10/32 => 00:04:00:00:00:01 1
+                std::vector<MatchKeyParam> match_key_4;
+                match_key_4.emplace_back(MatchKeyParam::Type::LPM,
+                                            std::string("\x0a\x00\x01\x0a", 4), 32);
+                ActionData data_4;
+                data_4.push_back_action_data("\x00\x04\x00\x00\x00\x01", 6);
+                data_4.push_back_action_data(1);
+                entry_handle_t handle_4;
+                sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_4, 
+                                    "MyIngress.ipv4_forward", data_4, &handle_4);
+            }
+           
+            {
+                // table_add ipv4_lpm ipv4_forward 10.0.1.21/32 => 00:04:00:00:00:02 2
+                std::vector<MatchKeyParam> match_key_5;
+                match_key_5.emplace_back(MatchKeyParam::Type::LPM,
+                                            std::string("\x0a\x00\x01\x15", 4), 32);
+                ActionData data_5;
+                data_5.push_back_action_data("\x00\x04\x00\x00\x00\x02", 6);
+                data_5.push_back_action_data(2);
+                entry_handle_t handle_5;
+                sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_5, 
+                                    "MyIngress.ipv4_forward", data_5, &handle_5);
+            }
+            
+            {
+                // table_add ipv4_lpm ipv4_forward 10.0.1.22/32 => 00:04:00:00:00:03 3
+                std::vector<MatchKeyParam> match_key_6;
+                match_key_6.emplace_back(MatchKeyParam::Type::LPM,
+                                            std::string("\x0a\x00\x01\x16", 4), 32);
+                ActionData data_6;
+                data_6.push_back_action_data("\x00\x04\x00\x00\x00\x03", 6);
+                data_6.push_back_action_data(3);
+                entry_handle_t handle_6;
+                sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_6, 
+                                    "MyIngress.ipv4_forward", data_6, &handle_6);
+            }
+           
+            {
+                // table_add ipv4_lpm ipv4_forward 192.168.1.0/24 => 00:04:00:00:00:02 2
+                std::vector<MatchKeyParam> match_key_7;
+                match_key_7.emplace_back(MatchKeyParam::Type::LPM,
+                                            std::string("\xc0\xa8\x01\x00", 4), 24);
+                ActionData data_7;
+                data_7.push_back_action_data("\x00\x04\x00\x00\x00\x02", 6);
+                data_7.push_back_action_data(2);
+                entry_handle_t handle_7;
+                sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_7, 
+                                    "MyIngress.ipv4_forward", data_7, &handle_7);
+            }
+           
         }
 
     protected:
@@ -115,6 +222,7 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
         static const char testdata_folder[];
         static const char init_json_for_old[];
         static const char init_json_for_new[];
+        static const char plan_file[];
 };
 
 // pkt = Ether(src="00:00:00:00:00:00", dst="ff:ff:ff:ff:ff:ff") / 
@@ -133,5 +241,47 @@ SimpleSwitch* RuntimeRegisterReconfigRehashTest::test_switch_new = nullptr;
 
 const char RuntimeRegisterReconfigRehashTest::testdata_dir[] = TESTDATADIR;
 const char RuntimeRegisterReconfigRehashTest::testdata_folder[] = "runtime_register_reconfig";
-const char RuntimeRegisterReconfigRehashTest::init_json_for_old[] = "old_SYN_flooding_protection_with_mark.p4.json";
-const char RuntimeRegisterReconfigRehashTest::init_json_for_new[] = "new_SYN_flooding_protection_with_mark.p4.json";
+const char RuntimeRegisterReconfigRehashTest::init_json_for_old[] = "old_SYN_flooding_protection.json";
+const char RuntimeRegisterReconfigRehashTest::init_json_for_new[] = "new_SYN_flooding_protection.json";
+const char RuntimeRegisterReconfigRehashTest::plan_file[] = "reconfiguration_command.txt";
+
+TEST_F(RuntimeRegisterReconfigRehashTest, RehashCheck) {
+    constexpr int port_in = 1;
+    constexpr int send_recv_times = 3;
+
+    for (int i = 0; i < send_recv_times; i++) {
+        packet_inject_for_old.send(port_in, attack_pkt_bin, sizeof(attack_pkt_bin));
+
+        int recv_port = -1;
+        char recv_buffer[1024];
+        receiver_for_old.read(recv_buffer, sizeof(recv_buffer), &recv_port);
+    }
+
+    fs::path json_path_for_new = 
+                fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path(init_json_for_new);
+
+    fs::path plan_file_path = 
+                fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path(plan_file);
+
+    test_switch_old->mt_runtime_reconfig(0, json_path_for_new.string(), plan_file_path.string());
+
+    std::vector<bm::Data> bloom_filter_after_reconfig = 
+        test_switch_old->register_read_all(0, "defence_bloom_filter_for_ip_src");
+   
+    for (int i = 0; i < send_recv_times; i++) {
+        packet_inject_for_new.send(port_in, attack_pkt_bin, sizeof(attack_pkt_bin));
+
+        int recv_port = -1;
+        char recv_buffer[1024];
+        receiver_for_new.read(recv_buffer, sizeof(recv_buffer), &recv_port);
+    }
+
+    std::vector<bm::Data> bloom_filter_for_new_switch = 
+        test_switch_new->register_read_all(0, "defence_bloom_filter_for_ip_src");
+
+    ASSERT_EQ(bloom_filter_after_reconfig.size(), bloom_filter_for_new_switch.size());
+    for (int i = 0; i < bloom_filter_for_new_switch.size(); i++) {
+        ASSERT_TRUE(bloom_filter_after_reconfig[i].get<uint32_t>() == 
+                        bloom_filter_for_new_switch[i].get<uint32_t>());
+    }
+}
