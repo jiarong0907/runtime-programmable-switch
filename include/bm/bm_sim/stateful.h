@@ -156,6 +156,10 @@ class RegisterArray : public NamedP4Object {
 
   int get_bitwidth() const { return bitwidth; }
 
+  void set_bitwidth(int bitwidth) {
+    this->bitwidth = bitwidth;
+  }
+
   void reset_state();
 
   //! Register your own notifier function. Every time a write operation is

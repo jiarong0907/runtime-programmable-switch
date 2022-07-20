@@ -1,3 +1,4 @@
 test*
 !test*.cpp
 !testdata/
+*.new

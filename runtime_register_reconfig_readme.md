@@ -13,6 +13,10 @@
 - New demo:
     - Defence SYN flooding attack [1]
 
+- New unit tests:
+    - `test_runtime_register_reconfig_commands`
+    - `test_runtime_register_reconfig_p4objects`
+    - `test_runtime_register_reconfig_rehash`
 
 ---
 ### How to run the demo:
@@ -45,7 +49,7 @@ h1 and h2 are clients, and h3 is the server. h1 will attack h3 using SYN floodin
 
 4. When mininet is running, enter the command
 
-    `h1 python3 ./attack_sender.py 10.0.1.22 attack >> h1_log.log &` 
+    `h1 python3 ./attacker_send.py 10.0.1.22 attack >> h1_log.log &` 
     
     (This will send SYN packets with pseudo IP src addresses `192.168.7.0-192.168.7.255` to `h3`.)
 5. After a few seconds, enter the command `h2 python3 ./error_rate_checker.py 10.0.1.22`.
@@ -82,6 +86,23 @@ Now, you can see some outputs like
 ``` 
 
 This is because, with a larger bloom filter (1024 entries in this case), it's easier to distinguish ordinary users from malicious ones.
+
+---
+### How to run the tests:
+1. Compile the codes with `make -j4`
+2. To run `test_runtime_register_reconfig_commands` and `test_runtime_register_reconfig_p4objects`:
+
+    Enter `sudo make check TESTS='test_runtime_register_reconfig_commands test_runtime_register_reconfig_p4objects'`
+
+3. To run `test_runtime_register_reconfig_rehash`:
+    
+    Go to `targets/simple_switch/tests`
+
+    Enter `sudo make check TESTS='test_runtime_register_reconfig_rehash'`
+
+4. See the test results:
+
+    Open the generated log files
 
 ---
 ### Reference:

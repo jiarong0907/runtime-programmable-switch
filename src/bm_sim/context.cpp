@@ -317,7 +317,11 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
         return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
     } else if (op == "delete") {
-      ss >> pipeline >> items[0];
+      if (target == "register_array") {
+        ss >> items[0];
+      } else {
+        ss >> pipeline >> items[0];
+      }
       int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
       if (convert_id_return_code == 1) {
           return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
@@ -369,6 +373,8 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
       if (!line.substr(start).empty()) {
         parsed_params.push_back(line.substr(start));
       }
+      // remove the first two elements "rehash" and "register_array"
+      parsed_params.erase(parsed_params.begin(), parsed_params.begin() + 2);
 
       std::string tmp_val;
       int convert_id_return_code = 0;

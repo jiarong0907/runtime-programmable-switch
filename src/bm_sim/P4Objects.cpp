@@ -3403,6 +3403,7 @@ P4Objects::change_register_array_bitwidth_rt(const std::string& name,
     }
     register_array->reset_registers_with(registers_new);
   }
+  register_array->set_bitwidth(new_register_array_bitwidth);
   modify_json_value("register_array", name, "bitwidth", new_register_array_bitwidth);
 }
 

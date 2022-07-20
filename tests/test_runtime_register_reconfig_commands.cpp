@@ -2,6 +2,7 @@
 
 #include <bm/bm_sim/switch.h>
 #include <bm/bm_sim/_assert.h>
+#include <targets/simple_switch/simple_switch.h>
 
 #include <fstream>
 #include <sstream>
@@ -114,7 +115,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, NonexistentJsonFile) {
     fs::path exist_plan = fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path("exist_plan.txt");
 
     ASSERT_EQ(RuntimeReconfigErrorCode::OPEN_JSON_FILE_FAIL,
-        static_cast<int>(
+        static_cast<RuntimeReconfigErrorCode>(
             sw.mt_runtime_reconfig(cxt_id, 
                                     nonexistent_json.string(), 
                                     exist_plan.string())));
@@ -125,7 +126,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, NonexistentPlanFile) {
     fs::path exist_plan = fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path("nonexistent.file");
 
     ASSERT_EQ(RuntimeReconfigErrorCode::OPEN_PLAN_FILE_FAIL,
-        static_cast<int>(
+        static_cast<RuntimeReconfigErrorCode>(
             sw.mt_runtime_reconfig(cxt_id, 
                                     nonexistent_json.string(), 
                                     exist_plan.string())));
@@ -167,7 +168,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, DuplicateInsert) {
 
 TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundChangeSizeTarget) {
     std::istringstream new_json_file_ss("{}");
-    std::istringstream reconfig_commands_ss("change register_array_size old_nonexistent_register_array 2048");
+    std::istringstream reconfig_commands_ss("change register_array_size new_nonexistent_register_array 2048");
 
     ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
@@ -178,7 +179,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundChangeSizeTarget) {
 
 TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundChangeBitwidthTarget) {
     std::istringstream new_json_file_ss("{}");
-    std::istringstream reconfig_commands_ss("change register_array_bitwidth old_nonexistent_register_array 64");
+    std::istringstream reconfig_commands_ss("change register_array_bitwidth new_nonexistent_register_array 64");
 
     ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
@@ -211,7 +212,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, InvalidChaneBitWidthPrefix) {
 
 TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundDeleteTarget) {
     std::istringstream new_json_file_ss("{}");
-    std::istringstream reconfig_commands_ss("delete register_array old_nonexistent_register_array");
+    std::istringstream reconfig_commands_ss("delete register_array new_nonexistent_register_array");
 
     ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
@@ -303,7 +304,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, InvalidRehashTag3) {
                                             "--hash-function-for-target crc16 identity csum16 "
                                             "--to-reset old_last_update_time_for_defence_bloom_filter");
 
-    ASSERT_EQ(RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR, 
+    ASSERT_EQ(RuntimeReconfigErrorCode::INVALID_HASH_FUNCTION_NAME_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
             sw.mt_runtime_reconfig_with_stream(cxt_id, 
                                                 &new_json_file_ss, 
@@ -318,11 +319,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashRegisterArrayName0) {
                                             "--hash-function-for-target crc16 identity csum16 "
                                             "--reset old_last_update_time_for_defence_bloom_filter");
 
-    ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
-        static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
-                                                &new_json_file_ss, 
-                                                &reconfig_commands_ss)));
+    ASSERT_THROW(sw.mt_runtime_reconfig_with_stream(0, &new_json_file_ss, &reconfig_commands_ss), std::out_of_range);
 }
 
 TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashRegisterArrayName1) {
@@ -333,11 +330,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashRegisterArrayName1) {
                                             "--hash-function-for-target crc16 identity csum16 "
                                             "--reset old_last_update_time_for_defence_bloom_filter");
 
-    ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
-        static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
-                                                &new_json_file_ss, 
-                                                &reconfig_commands_ss)));
+    ASSERT_THROW(sw.mt_runtime_reconfig_with_stream(0, &new_json_file_ss, &reconfig_commands_ss), std::out_of_range);
 }
 
 TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashRegisterArrayName2) {
@@ -348,11 +341,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashRegisterArrayName2) {
                                             "--hash-function-for-target crc16 identity csum16 "
                                             "--reset old_last_update_time_for_defence_bloom_filter");
 
-    ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
-        static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
-                                                &new_json_file_ss, 
-                                                &reconfig_commands_ss)));
+    ASSERT_THROW(sw.mt_runtime_reconfig_with_stream(0, &new_json_file_ss, &reconfig_commands_ss), std::out_of_range);
 }
 
 TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashRegisterArrayName3) {
@@ -363,11 +352,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashRegisterArrayName3) {
                                             "--hash-function-for-target crc16 identity csum16 "
                                             "--reset old_last_update_time_for_defence_bloom_filter");
 
-    ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
-        static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
-                                                &new_json_file_ss, 
-                                                &reconfig_commands_ss)));
+    ASSERT_THROW(sw.mt_runtime_reconfig_with_stream(0, &new_json_file_ss, &reconfig_commands_ss), std::out_of_range);
 }
 
 TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashRegisterArrayName4) {
@@ -378,11 +363,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashRegisterArrayName4) {
                                             "--hash-function-for-target crc16 identity csum16 "
                                             "--reset old_non");
 
-    ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
-        static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
-                                                &new_json_file_ss, 
-                                                &reconfig_commands_ss)));
+   ASSERT_THROW(sw.mt_runtime_reconfig_with_stream(0, &new_json_file_ss, &reconfig_commands_ss), std::out_of_range);
 }
 
 TEST_F(RuntimeRegisterReconfigCommandTest, UnfoundRehashHashFunction0) {
