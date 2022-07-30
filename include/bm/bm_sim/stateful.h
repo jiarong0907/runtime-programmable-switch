@@ -69,6 +69,13 @@ class Register : public Data {
 
   void export_bytes() override;
 
+  void set_bitwidth(int bit_width) {
+    mask = 1;
+    mask <<= bit_width;
+    mask -= 1;
+    export_bytes();
+  }
+
  private:
   Bignum mask{1};
   // keep a pointer to parent RegisterArray so that export_bytes() can notify
@@ -147,6 +154,12 @@ class RegisterArray : public NamedP4Object {
   //! includes)
   size_t size() const { return registers.size(); }
 
+  int get_bitwidth() const { return bitwidth; }
+
+  void set_bitwidth(int bitwidth) {
+    this->bitwidth = bitwidth;
+  }
+
   void reset_state();
 
   //! Register your own notifier function. Every time a write operation is
@@ -163,6 +176,11 @@ class RegisterArray : public NamedP4Object {
   UniqueLock unique_lock() const { return UniqueLock(m_mutex); }
   // NOLINTNEXTLINE(runtime/references)
   void unlock(UniqueLock &lock) const { lock.unlock(); }
+
+  void reset_registers_with(std::vector<Register>& registers_new) { 
+    registers.swap(registers_new); 
+    registers_new.clear();
+  }
 
  private:
   void notify(const Register &reg) const;

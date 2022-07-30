@@ -301,6 +301,10 @@ class P4Objects {
                                     const std::string &name,
                                     const std::string &old_next_name,
                                     const std::string &new_next_name);
+  const Json::Value build_register_array_json_value(int id,
+                                          const std::string &name,
+                                          const std::string &register_array_size,
+                                          const std::string &register_array_bitwidth);
 
   const std::string insert_match_table_rt(std::shared_ptr<P4Objects> p4objects_new,
                                           const std::string &pipeline_name,
@@ -313,6 +317,9 @@ class P4Objects {
   const std::string insert_flex_rt(const std::string &pipeline_name,
                                    const std::string &old_next_name,
                                    const std::string &new_next_name);
+  const std::string insert_register_array_rt(const std::string& name,
+                                             const std::string& register_array_size,
+                                             const std::string& register_array_bitwidth);
   void change_init_node_rt(const std::string &pipeline_name,
                            const std::string &dst_node_name);
   void change_table_next_node_rt(const std::string &pipeline_name,
@@ -323,6 +330,10 @@ class P4Objects {
                                        const std::string &src_conditional_name,
                                        const std::string &edge_name,
                                        const std::string &dst_node_name);
+  void change_register_array_size_rt(const std::string& name,
+                                     const std::string& register_array_size);
+  void change_register_array_bitwidth_rt(const std::string& name,
+                                         const std::string& register_array_bitwidth);
   void flex_trigger_rt(bool on);
   void delete_flex_rt(const std::string &pipeline_name,
                       const std::string &name);
@@ -330,6 +341,47 @@ class P4Objects {
                              const std::string &name);
   void delete_match_table_rt(const std::string &pipeline_name,
                              const std::string &name);
+  void delete_register_array_rt(const std::string& name);
+
+  //! Rehashes the target register array referring to the provided parameters.
+  //! 
+  //! It's designed for the convenience of SYN_flooding_protection's demonstration. 
+  //! The target_register_array is the original counting bloom filter for the 
+  //! defence of malicious SYN flooding attacks, which we need to enlarge this register array to
+  //! degrade the error rate of protection during reconfiguration. 
+  //! To this end, some additional parameters are needed, such as a register array storing the clients' IP addresses ("recording_register_array") and 
+  //! another container recording the frequency of access for each client ("recording_counting_register_array").
+  //! 
+  //!
+  //! Runtime command:
+  //! @code
+  //! rehash register_array <target_register_array> 
+  //! --according-to <recording_register_array> <recording_last_pos_register_array> <recording_counting_register_array> 
+  //! --hash-function-for-counting <hash_function> 
+  //! --hash-function-for-target <first_pos_hash_function> <second_pos_hash_function> ... <nth_pos_hash_function> 
+  //! --reset <time_stamp_register_array>
+  //!
+  //! @endcode
+  //!
+  //! @param target_register_array the register array to be rehashed.
+  //! @param recording_register_array  the register array recording the source of target register array.
+  //! (As for demo SYN_flooding_protection, it stores the IP address of incoming clients.)
+  //! @param recording_last_pos_register_array the register array of size 1, which indicates the last position of recording_register_array.
+  //! @param recording_counting_register_array the register array counting the number of accesses.
+  //! (As for demo SYN_flooding_protection, each SYN message will increase the counting by 1. In contrast, each ACK message will result in opposite effect.)
+  //! @param hash_function_for_counting the hash function for recording_counting_register_array. 
+  //! (As for demo SYN_flooding_protection, hash(IPv4_address) => pos_in_recording_counting_register_array.)
+  //! @param pos_hash_functions the hash functions for target_register_array.
+  //! (As for demo SYN_flooding_protection, hash(IPv4_address) => pos_in_target_register_array.)
+  //! @param register_array_to_be_reset the register array to be reset after rehashing.
+  //! (As for demo SYN_flooding_protection, we reset the time stamp register array after each rehashing.)
+  void rehash_register_array_rt(const std::string &target_register_array,
+                             const std::string &recording_register_array, 
+                             const std::string &recording_last_pos_register_array, 
+                             const std::string &recording_counting_register_array,
+                             const std::string &hash_function_for_counting,
+                             const std::vector<std::string> &pos_hash_functions,
+                             const std::string &register_array_to_be_reset);
   void insert_parse_state_rt(std::shared_ptr<P4Objects> p4objects_new,
                              const std::string &parser_name,
                              const std::string &name);
@@ -339,6 +391,10 @@ class P4Objects {
                             const std::string &dst_state_name);
 
   void print_cfg(std::ostream &os);
+
+  const Json::Value& get_cfg() {
+    return cfg_root;
+  }
 
  private:
   // The get_*_cfg are used during json parsing: they will throw a
@@ -409,6 +465,8 @@ class P4Objects {
   void add_control_node(const std::string &name, ControlFlowNode *node);
 
   void remove_control_node(const std::string &name);
+
+  void remove_register_array(const std::string& name);
 
   ControlFlowNode *get_control_node_cfg(const std::string &name) const;
 
@@ -614,6 +672,7 @@ class P4Objects {
   int tableIdCount;
   int actionIdCount;
   int conditionalIdCount;
+  int registerArrayIdCount;
   std::unordered_map<std::string, int> parseStateIdCount;
   int conditionalNameMax;
 
@@ -628,6 +687,7 @@ class P4Objects {
   std::unordered_map<std::string, Json::Value*> cfg_parsers_map{};
   std::unordered_map<std::string, Json::Value*> cfg_parser_parse_states_map{};
   std::unordered_map<std::string, Json::Value*> cfg_parse_states_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_register_arrays_map{};
 
  private:
   int get_field_offset(header_id_t header_id,
