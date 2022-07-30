@@ -123,6 +123,16 @@ class SimpleSwitch : public Switch {
     return packet_id - 1;
   }
 
+  // this should only be used for tests
+  P4Objects* get_p4objects_rt() {
+    return get_context(0)->get_p4objects_rt();
+  }
+
+  // this should only be used for tests
+  P4Objects* get_p4objects_new() {
+    return get_context(0)->get_p4objects_new();
+  }
+
   void set_transmit_fn(TransmitFn fn);
 
   port_t get_drop_port() const {

@@ -166,6 +166,16 @@ class Context final {
     return p4objects->get_action(table_name, action_name)->get_id();
   }
 
+  // this should only be used for tests
+  P4Objects* get_p4objects_rt() {
+    return p4objects_rt.get();
+  }
+
+  // this should only be used for tests
+  P4Objects* get_p4objects_new() {
+    return p4objects_new.get();
+  }
+
  private:
   // ---------- runtime interfaces ----------
 

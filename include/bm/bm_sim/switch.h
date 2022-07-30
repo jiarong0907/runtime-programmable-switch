@@ -873,6 +873,7 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
     }
 
     if (output_json_file.empty()) {
+      std::cout << "table reconfig successfully" << std::endl;
       return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
     }
 

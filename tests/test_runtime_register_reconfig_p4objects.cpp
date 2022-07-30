@@ -24,7 +24,7 @@ namespace fs = boost::filesystem;
 class RuntimeRegisterReconfigP4ObjectsTest : public ::testing::Test {
     protected:
         P4Objects p4objects{};
-        uint32_t register_array_init_size{0};
+        uint32_t ori_register_arrays_num{0};
         std::vector<std::string> register_array_init_names{};
         RuntimeRegisterReconfigP4ObjectsTest() { }
 
@@ -42,7 +42,7 @@ class RuntimeRegisterReconfigP4ObjectsTest : public ::testing::Test {
             Json::Value cfg_root;
             init_json_stream >> cfg_root;
             Json::Value& cfg_register_arrays = cfg_root["register_arrays"];
-            register_array_init_size = cfg_register_arrays.size();
+            ori_register_arrays_num = cfg_register_arrays.size();
             for (const auto& cfg_register_array : cfg_register_arrays) {
                 register_array_init_names.push_back(cfg_register_array["name"].asString());
             }
@@ -68,7 +68,7 @@ TEST_F(RuntimeRegisterReconfigP4ObjectsTest, InsertCheck) {
 
     p4objects.insert_register_array_rt(added_register_array_name, added_register_array_size, added_register_array_bitwidth);
 
-    std::string expected_added_register_array_name = added_register_array_name + "$" + std::to_string(register_array_init_size);
+    std::string expected_added_register_array_name = added_register_array_name + "$" + std::to_string(ori_register_arrays_num);
     ASSERT_NE(nullptr, p4objects.get_register_array_rt(expected_added_register_array_name));
 
     RegisterArray* added_register_array = p4objects.get_register_array_rt(expected_added_register_array_name);
@@ -81,7 +81,7 @@ TEST_F(RuntimeRegisterReconfigP4ObjectsTest, InsertCheck) {
             p4objects.get_json_value("register_array", expected_added_register_array_name);
 
     ASSERT_EQ(expected_added_register_array_name, (*added_register_array_json_value_in_map)["name"].asString());
-    ASSERT_EQ(register_array_init_size, (*added_register_array_json_value_in_map)["id"].asInt());
+    ASSERT_EQ(ori_register_arrays_num, (*added_register_array_json_value_in_map)["id"].asInt());
     ASSERT_EQ((size_t) std::stoi(added_register_array_size), (size_t) (*added_register_array_json_value_in_map)["size"].asUInt());
     ASSERT_EQ(std::stoi(added_register_array_bitwidth), (*added_register_array_json_value_in_map)["bitwidth"].asInt());
 

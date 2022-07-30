@@ -2,6 +2,8 @@
 
 #include <bm/bm_apps/packet_pipe.h>
 #include <bm/bm_sim/data.h>
+#include <bm/bm_sim/match_error_codes.h>
+#include <bm/bm_sim/logger.h>
 
 #include <string>
 #include <memory>
@@ -36,12 +38,14 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
         { }
 
         static void SetUpTestCase() {
+            // bm::Logger::set_logger_file("test_switch_log");
+
             // create and start old switch
             test_switch_old = new SimpleSwitch();
 
             fs::path json_path_for_old = 
                 fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path(init_json_for_old);
-            test_switch_old->init_objects(json_path_for_old.string());
+            std::cout << "init_objects: " << test_switch_old->init_objects(json_path_for_old.string()) << std::endl;
 
             test_switch_old->set_dev_mgr_packet_in(0, packet_in_addr_for_old, nullptr);
             test_switch_old->Switch::start();
@@ -54,7 +58,7 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
 
             fs::path json_path_for_new = 
                 fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path(init_json_for_new);
-            test_switch_new->init_objects(json_path_for_new.string());
+            std::cout << "init_objects: " << test_switch_new->init_objects(json_path_for_new.string()) << std::endl;
 
             test_switch_new->set_dev_mgr_packet_in(1, packet_in_addr_for_new, nullptr);
             test_switch_new->Switch::start();
@@ -106,9 +110,10 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
                 ActionData data_0;
                 data_0.push_back_action_data(0);
                 entry_handle_t handle_0;
-                sw->mt_add_entry(0, "MyIngress.check_ports", 
-                                    match_key_0, "MyIngress.set_direction", 
-                                    std::move(data_0), &handle_0);
+                MatchErrorCode returned_code = sw->mt_add_entry(0, "MyIngress.check_ports", 
+                                                                match_key_0, "MyIngress.set_direction", 
+                                                                std::move(data_0), &handle_0);
+                std::cout << bm::match_error_code_to_string(returned_code) << std::endl;
             }
            
             {
@@ -119,9 +124,10 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
                 ActionData data_1;
                 data_1.push_back_action_data(0);
                 entry_handle_t handle_1;
-                sw->mt_add_entry(0, "MyIngress.check_ports", 
-                                    match_key_1, "MyIngress.set_direction", 
-                                    std::move(data_1), &handle_1);
+                MatchErrorCode returned_code = sw->mt_add_entry(0, "MyIngress.check_ports", 
+                                                                match_key_1, "MyIngress.set_direction", 
+                                                                std::move(data_1), &handle_1);
+                std::cout << bm::match_error_code_to_string(returned_code) << std::endl;
             }
             
             {
@@ -132,9 +138,10 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
                 ActionData data_2;
                 data_2.push_back_action_data(1);
                 entry_handle_t handle_2;
-                sw->mt_add_entry(0, "MyIngress.check_ports", 
-                                    match_key_2, "MyIngress.set_direction", 
-                                    std::move(data_2), &handle_2);
+                MatchErrorCode returned_code = sw->mt_add_entry(0, "MyIngress.check_ports", 
+                                                                match_key_2, "MyIngress.set_direction", 
+                                                                std::move(data_2), &handle_2);
+                std::cout << bm::match_error_code_to_string(returned_code) << std::endl;
             }
             
             {
@@ -145,9 +152,10 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
                 ActionData data_3;
                 data_3.push_back_action_data(1);
                 entry_handle_t handle_3;
-                sw->mt_add_entry(0, "MyIngress.check_ports", 
-                                    match_key_3, "MyIngress.set_direction", 
-                                    std::move(data_3), &handle_3);
+                MatchErrorCode returned_code = sw->mt_add_entry(0, "MyIngress.check_ports", 
+                                                                match_key_3, "MyIngress.set_direction", 
+                                                                std::move(data_3), &handle_3);
+                std::cout << bm::match_error_code_to_string(returned_code) << std::endl;
             }
            
 
@@ -161,8 +169,9 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
                 data_4.push_back_action_data("\x00\x04\x00\x00\x00\x01", 6);
                 data_4.push_back_action_data(1);
                 entry_handle_t handle_4;
-                sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_4, 
-                                    "MyIngress.ipv4_forward", data_4, &handle_4);
+                MatchErrorCode returned_code = sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_4, 
+                                                                "MyIngress.ipv4_forward", data_4, &handle_4);
+                std::cout << bm::match_error_code_to_string(returned_code) << std::endl;
             }
            
             {
@@ -174,8 +183,9 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
                 data_5.push_back_action_data("\x00\x04\x00\x00\x00\x02", 6);
                 data_5.push_back_action_data(2);
                 entry_handle_t handle_5;
-                sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_5, 
-                                    "MyIngress.ipv4_forward", data_5, &handle_5);
+                MatchErrorCode returned_code = sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_5, 
+                                                                "MyIngress.ipv4_forward", data_5, &handle_5);
+                std::cout << bm::match_error_code_to_string(returned_code) << std::endl;
             }
             
             {
@@ -187,8 +197,9 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
                 data_6.push_back_action_data("\x00\x04\x00\x00\x00\x03", 6);
                 data_6.push_back_action_data(3);
                 entry_handle_t handle_6;
-                sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_6, 
-                                    "MyIngress.ipv4_forward", data_6, &handle_6);
+                MatchErrorCode returned_code = sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_6, 
+                                                                "MyIngress.ipv4_forward", data_6, &handle_6);
+                std::cout << bm::match_error_code_to_string(returned_code) << std::endl;
             }
            
             {
@@ -200,8 +211,9 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
                 data_7.push_back_action_data("\x00\x04\x00\x00\x00\x02", 6);
                 data_7.push_back_action_data(2);
                 entry_handle_t handle_7;
-                sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_7, 
-                                    "MyIngress.ipv4_forward", data_7, &handle_7);
+                MatchErrorCode returned_code = sw->mt_add_entry(0, "MyIngress.ipv4_lpm", match_key_7, 
+                                                                "MyIngress.ipv4_forward", data_7, &handle_7);
+                std::cout << bm::match_error_code_to_string(returned_code) << std::endl;
             }
            
         }
@@ -231,8 +243,8 @@ class RuntimeRegisterReconfigRehashTest : public ::testing::Test {
 // pkt = Ether(src="00:00:00:00:00:00", dst="ff:ff:ff:ff:ff:ff") / 
 //          IP(src="192.168.7.2", dst="10.0.1.22") / 
 //              TCP(dport=1234, sport=49153, flags="S")
-const char RuntimeRegisterReconfigRehashTest::attack_pkt_bin[] = 
-    "\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x08\x00E\x00\x00"
+const char RuntimeRegisterReconfigRehashTest::attack_pkt_bin[] =
+    "\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x08\x00\x45\x00\x00"
     "(\x00\x01\x00\x00@\x06\xa8\x0f\xc0\xa8\x07\x02\n\x00\x01\x16\xc0"
     "\x01\x04\xd2\x00\x00\x00\x00\x00\x00\x00\x00P\x02 \x00\xf8N\x00\x00";
 
@@ -250,14 +262,16 @@ const char RuntimeRegisterReconfigRehashTest::plan_file[] = "reconfiguration_com
 
 TEST_F(RuntimeRegisterReconfigRehashTest, RehashCheck) {
     constexpr int port_in = 1;
+    constexpr int port_out = 3;
     constexpr int send_recv_times = 3;
 
     for (int i = 0; i < send_recv_times; i++) {
         packet_inject_for_old.send(port_in, attack_pkt_bin, sizeof(attack_pkt_bin));
 
         int recv_port = -1;
-        char recv_buffer[1024];
+        char recv_buffer[1024] = {0};
         receiver_for_old.read(recv_buffer, sizeof(recv_buffer), &recv_port);
+        ASSERT_EQ(port_out, recv_port);
     }
 
     fs::path json_path_for_new = 
@@ -275,16 +289,24 @@ TEST_F(RuntimeRegisterReconfigRehashTest, RehashCheck) {
         packet_inject_for_new.send(port_in, attack_pkt_bin, sizeof(attack_pkt_bin));
 
         int recv_port = -1;
-        char recv_buffer[1024];
+        char recv_buffer[1024] = {0};
         receiver_for_new.read(recv_buffer, sizeof(recv_buffer), &recv_port);
+        ASSERT_EQ(port_out, recv_port);
     }
 
     std::vector<bm::Data> bloom_filter_for_new_switch = 
         test_switch_new->register_read_all(0, "defence_bloom_filter_for_ip_src");
 
     ASSERT_EQ(bloom_filter_after_reconfig.size(), bloom_filter_for_new_switch.size());
+
+    bool counting_correct = false;
     for (size_t i = 0; i < bloom_filter_for_new_switch.size(); i++) {
         ASSERT_TRUE(bloom_filter_after_reconfig[i].get<uint32_t>() == 
                         bloom_filter_for_new_switch[i].get<uint32_t>());
+        if (bloom_filter_after_reconfig[i].get<uint32_t>() == send_recv_times) {
+            counting_correct = true;
+        }
     }
+
+    ASSERT_TRUE(counting_correct);
 }
