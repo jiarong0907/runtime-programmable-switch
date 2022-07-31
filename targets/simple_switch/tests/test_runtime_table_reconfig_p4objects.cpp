@@ -1,24 +1,37 @@
 #include <gtest/gtest.h>
 
-#include <bm/bm_sim/switch.h>
-#include <bm/bm_sim/_assert.h>
-#include <targets/simple_switch/simple_switch.h>
+#include <bm/bm_apps/packet_pipe.h>
+#include <bm/bm_sim/data.h>
+#include <bm/bm_sim/match_error_codes.h>
+#include <bm/bm_sim/logger.h>
 
-#include <fstream>
-#include <sstream>
-#include <vector>
 #include <string>
+#include <memory>
+#include <vector>
+#include <algorithm>  // for std::is_sorted
 
 #include <boost/filesystem.hpp>
 
-using namespace bm;
-typedef SimpleSwitch SwitchTest;
+#include "simple_switch.h"
+
+#include "utils.h"
 
 namespace fs = boost::filesystem;
 
+using bm::RuntimeReconfigErrorCode;
+using bm::MatchActionTable;
+using bm::MatchTableAbstract;
+using bm::ActionFn;
+
+namespace {
+    void
+    packet_handler(int port_num, const char *buffer, int len, void *cookie) {
+        static_cast<SimpleSwitch *>(cookie)->receive(port_num, buffer, len);
+    }
+}
+
 class RuntimeTableReconfigP4ObjectsTest : public ::testing::Test {
     protected:
-        SwitchTest sw{};
         size_t cxt_id{0};
         size_t ori_tables_num{0};
         size_t ori_actions_num{0};
@@ -27,12 +40,22 @@ class RuntimeTableReconfigP4ObjectsTest : public ::testing::Test {
         std::ifstream* new_json_file_stream;
         RuntimeTableReconfigP4ObjectsTest() 
             : new_json_file_stream(nullptr)
-         { }
+        { }
+
+        static void SetUpTestCase() {
+            sw = new SimpleSwitch();
+
+            fs::path init_json_path = fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path(init_json);
+            _BM_ASSERT(sw->init_objects(init_json_path.string()) == 0);
+
+            sw->set_dev_mgr_packet_in(0, "inproc://packets", nullptr);
+            sw->Switch::start();
+            sw->set_packet_handler(packet_handler, static_cast<void*>(sw));
+            sw->start_and_return();
+        }
 
         virtual void SetUp() override {
             fs::path init_json_path = fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path(init_json);
-            _BM_ASSERT(sw.init_objects(init_json_path.string()) == 0);
-
             std::ifstream init_json_stream(init_json_path.string(), std::ios::in);
             _BM_ASSERT(init_json_stream);
 
@@ -72,7 +95,13 @@ class RuntimeTableReconfigP4ObjectsTest : public ::testing::Test {
 
         virtual void TearDown() override {
             delete new_json_file_stream;
-         }
+        }
+
+        static void TearDownTestCase() {
+
+        }
+
+        static SimpleSwitch* sw;
 
         static const char* testdata_dir;
         static const char* testdata_folder;
@@ -91,16 +120,18 @@ const char* RuntimeTableReconfigP4ObjectsTest::new_json = "runtime_table_reconfi
 
 const std::string RuntimeTableReconfigP4ObjectsTest::added_tabl_name = "MyIngress.acl";
 
+SimpleSwitch* RuntimeTableReconfigP4ObjectsTest::sw = nullptr;
+
 TEST_F(RuntimeTableReconfigP4ObjectsTest, InsertCheck) {
     std::istringstream reconfig_commands_ss("insert tabl ingress new_" + added_tabl_name);
 
     ASSERT_EQ(RuntimeReconfigErrorCode::SUCCESS, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream,
                                                 &reconfig_commands_ss)));
 
-    P4Objects* p4objects_rt = sw.get_p4objects_rt();
+    P4Objects* p4objects_rt = sw->get_p4objects_rt();
 
     std::string expected_added_tabl_name = added_tabl_name + "$" + std::to_string(ori_tables_num);
 
@@ -136,9 +167,9 @@ TEST_F(RuntimeTableReconfigP4ObjectsTest, InsertCheck) {
         ASSERT_EQ(nullptr, match_table->get_next_nodes()[i]);
     }
 
-    for (const auto& cfg_action_id : *added_tabl_json_value_in_cfg) {
-        ASSERT_TRUE(cfg_action_id.asInt() >= ori_actions_num && 
-            cfg_action_id.asInt() < ori_actions_num + added_tabl_ori_next_nodes_num);
+    for (const auto& cfg_action_id : (*added_tabl_json_value_in_cfg)["action_ids"]) {
+        ASSERT_TRUE((size_t) cfg_action_id.asInt() >= ori_actions_num && 
+            (size_t) cfg_action_id.asInt() < ori_actions_num + added_tabl_ori_next_nodes_num);
     }
 
     if (match_table->get_has_next_node_hit()) {
@@ -166,11 +197,11 @@ TEST_F(RuntimeTableReconfigP4ObjectsTest, ChangeHitEdgeCheck) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::SUCCESS, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 
-    P4Objects* p4objects_rt = sw.get_p4objects_rt();
+    P4Objects* p4objects_rt = sw->get_p4objects_rt();
     ASSERT_NO_THROW(p4objects_rt->get_match_action_table("MyIngress.ipv4_lpm"));
     MatchActionTable* table_ptr = p4objects_rt->get_match_action_table("MyIngress.ipv4_lpm");
     MatchTableAbstract* match_table = table_ptr->get_match_table();
@@ -184,11 +215,11 @@ TEST_F(RuntimeTableReconfigP4ObjectsTest, ChangeMissEdgeCheck) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::SUCCESS, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
     
-    P4Objects* p4objects_rt = sw.get_p4objects_rt();
+    P4Objects* p4objects_rt = sw->get_p4objects_rt();
     ASSERT_NO_THROW(p4objects_rt->get_match_action_table("MyIngress.ipv4_lpm"));
     MatchActionTable* table_ptr = p4objects_rt->get_match_action_table("MyIngress.ipv4_lpm");
     MatchTableAbstract* match_table = table_ptr->get_match_table();
@@ -202,11 +233,11 @@ TEST_F(RuntimeTableReconfigP4ObjectsTest, ChangeActionEdgeCheck) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::SUCCESS, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 
-    P4Objects* p4objects_rt = sw.get_p4objects_rt();
+    P4Objects* p4objects_rt = sw->get_p4objects_rt();
     ASSERT_NO_THROW(p4objects_rt->get_match_action_table("MyIngress.ipv4_lpm"));
     MatchActionTable* table_ptr = p4objects_rt->get_match_action_table("MyIngress.ipv4_lpm");
     MatchTableAbstract* match_table = table_ptr->get_match_table();
@@ -219,11 +250,11 @@ TEST_F(RuntimeTableReconfigP4ObjectsTest, DeleteCheck) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::SUCCESS, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 
-    P4Objects* p4objects_rt = sw.get_p4objects_rt();
+    P4Objects* p4objects_rt = sw->get_p4objects_rt();
     ASSERT_THROW(p4objects_rt->get_match_action_table("MyIngress.ipv4_lpm"), std::out_of_range);
     ASSERT_EQ(nullptr, p4objects_rt->get_json_value("ingress table", "MyIngress.ipv4_lpm"));
 }

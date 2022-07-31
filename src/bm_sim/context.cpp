@@ -139,13 +139,13 @@ Context::mt_runtime_reconfig(const std::string &json_file,
                              const ForceArith &arith_objects) {
   std::ifstream json_file_stream(json_file, std::ios::in);
   if (!json_file_stream) {
-    std::cout << "JSON input file " << json_file << " cannot be opened\n";
+    BMLOG_ERROR("JSON input file {} can't be opened", json_file);
     return RuntimeReconfigErrorCode::OPEN_JSON_FILE_FAIL;
   }
  
   std::ifstream plan_file_stream(plan_file);
   if (!plan_file_stream) {
-    std::cout << "Open plan failed: " << plan_file << std::endl;
+    BMLOG_ERROR("Open plan file {} failed", plan_file);
     return RuntimeReconfigErrorCode::OPEN_PLAN_FILE_FAIL;
   }
 
@@ -163,6 +163,7 @@ Context::mt_runtime_reconfig(const std::string &json_file,
   }
 }
 
+// this function should only be used for tests
 RuntimeReconfigErrorCode
 Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
                                         std::istream* plan_file_stream,
@@ -191,7 +192,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
         const std::string prefix = items[0].substr(0, 3);
         const std::string actual_name = items[0].substr(4);
         if (prefix != "new") {
-          std::cout << "Error: inserted table should only have prefix 'new_'\n";
           BMLOG_ERROR("Error: inserted table should only have prefix 'new_', but you enter {}", items[0]);
           return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
@@ -204,7 +204,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
         const std::string prefix = items[0].substr(0, 3);
         const std::string actual_name = items[0].substr(4);
         if (prefix != "new") {
-          std::cout << "Error: inserted cond should only have prefix 'new_'\n";
           BMLOG_ERROR("Error: inserted cond should only have prefix 'new_', but you enter {}", items[0]);
           return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
@@ -217,7 +216,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
         const std::string prefix = items[0].substr(0, 3);
         const std::string actual_name = items[0].substr(4);
         if (prefix != "flx") {
-          std::cout << "Error: inserted flex should only have prefix 'flx_'\n";
           BMLOG_ERROR("Error: inserted flex should only have prefix 'flx_', but you enter {}", items[0]);
           return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
@@ -233,7 +231,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
         const std::string prefix = items[0].substr(0, 3);
         const std::string actual_name = items[0].substr(4);
         if (prefix != "new") {
-          std::cout << "Error: inserted register_array should only have prefix 'new_'\n";
           BMLOG_ERROR("Error: inserted register_array should only have prefix 'new_', but you enter {}", items[0]);
           return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
@@ -242,7 +239,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
         }
         id2newNodeName[items[0]] = p4objects_rt->insert_register_array_rt(actual_name, vals[0], vals[1]);
       } else {
-        std::cout << "Error: unsupported target for insert: " << target << std::endl;
         BMLOG_ERROR("Error: unsupported target for insert: {}", target);
         return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
@@ -302,7 +298,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
         }
         p4objects_rt->change_register_array_bitwidth_rt(vals[0], items[1]);
       } else {
-        std::cout << "Error: unsupported target for change: " << target << std::endl;
         BMLOG_ERROR("Error: unsupported target for change: {}", target);
         return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
@@ -312,7 +307,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
       } else if (target == "off") {
         p4objects_rt->flex_trigger_rt(false);
       } else {
-        std::cout << "Error: unsupported target for trigger: " << target << std::endl;
         BMLOG_ERROR("Error: unsupported target for trigger: {}", target);
         return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
@@ -338,7 +332,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
       } else if (target == "register_array") {
         p4objects_rt->delete_register_array_rt(vals[0]);
       } else {
-        std::cout << "Error: unsupported target for delete: " << target << std::endl;
         BMLOG_ERROR("Error: unsupported target for delete: {}", target);
         return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
@@ -346,14 +339,12 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
       const std::string actual_name = items[0].substr(4);
       if (prefix == "new" || prefix == "flx") {
         if (id2newNodeName.erase(items[0]) != 1) {
-          std::cout << "Error: delete id from id2newNodeName fail: " << items[0] << std::endl;
           BMLOG_ERROR("Error: delete id from id2newNodeName fail: {}", items[0]);
           return RuntimeReconfigErrorCode::DELETE_ID_FAIL;
         }
       }
     } else if (op == "rehash") {
       if (target != "register_array") {
-        std::cout << "Error: rehash command can only have register_array as its target" << std::endl;
         BMLOG_ERROR("Error: rehash command can only have register_array as its target, but you enter {}", target);
         return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
       }
@@ -388,7 +379,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
       std::string target_register_array = tmp_val;
 
       if (parsed_params[1] != "--according-to") {
-        std::cout << "Error: rehash commmand should have tag --according-to" << std::endl;
         BMLOG_ERROR("Error: rehash commmand should have tag --according-to just after the <target_register_array> parameter");
         return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
       }
@@ -418,7 +408,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
       std::string recording_counting_register_array = tmp_val;
 
       if (parsed_params[5] != "--hash-function-for-counting") {
-        std::cout << "Error: rehash command should have tag --hash-function-for-counting" << std::endl;
         BMLOG_ERROR("Error: rehash command should have tag --hash-function-for-counting just after the "
                     "<recording_counting_register_array> parameter");
         return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
@@ -430,7 +419,6 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
       std::string hash_function_for_counting = parsed_params[6];
 
       if (parsed_params[7] != "--hash-function-for-target") {
-        std::cout << "Error: rehash command should have tag --hash-function-for-target" << std::endl;
         BMLOG_ERROR("Error: rehash command should have tag --hash-function-for-target just after the "
                     "<hash_function_for_target> parameter");
         return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
@@ -445,20 +433,17 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
         pos_hash_functions.push_back(parsed_params[i]);
         i++;
         if (i >= parsed_params.size()) {
-          std::cout << "Error: rehash command should have tag --reset" << std::endl;
           BMLOG_ERROR("Error: rehash command should have tag --reset");
           return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
         }
       }
 
       if (i == 8) {
-        std::cout << "Error: you should provide at least one hash function for rehashing target register array" << std::endl;
         BMLOG_ERROR("Error: you should provide at least one hash function for rehashing target register array");
         return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
       }
 
       if (i == parsed_params.size() - 1) {
-        std::cout << "Error: you should specify a time stamp register array to be reset" << std::endl;
         BMLOG_ERROR("Error: you should specify a time stamp register array to be reset");
         return RuntimeReconfigErrorCode::INVALID_COMMAND_ERROR;
       }

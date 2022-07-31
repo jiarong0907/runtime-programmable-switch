@@ -1,41 +1,67 @@
 #include <gtest/gtest.h>
 
-#include <bm/bm_sim/switch.h>
-#include <bm/bm_sim/_assert.h>
-#include <targets/simple_switch/simple_switch.h>
+#include <bm/bm_apps/packet_pipe.h>
+#include <bm/bm_sim/data.h>
+#include <bm/bm_sim/match_error_codes.h>
+#include <bm/bm_sim/logger.h>
 
-#include <fstream>
-#include <sstream>
-#include <vector>
 #include <string>
+#include <memory>
+#include <vector>
+#include <algorithm>  // for std::is_sorted
 
 #include <boost/filesystem.hpp>
 
-using namespace bm;
-typedef SimpleSwitch SwitchTest;
+#include "simple_switch.h"
+
+#include "utils.h"
 
 namespace fs = boost::filesystem;
 
+using bm::RuntimeReconfigErrorCode;
+
+namespace {
+    void
+    packet_handler(int port_num, const char *buffer, int len, void *cookie) {
+        static_cast<SimpleSwitch *>(cookie)->receive(port_num, buffer, len);
+    }
+}
+
+
 class RuntimeConditionalReconfigCommandTest : public ::testing::Test {
     protected:
-        SwitchTest sw{};
         size_t cxt_id{0};
         std::ifstream* new_json_file_stream;
         RuntimeConditionalReconfigCommandTest() 
             : new_json_file_stream(nullptr)
          { }
 
-        virtual void SetUp() override {
-            fs::path init_json_path = fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path(init_json);
-            _BM_ASSERT(sw.init_objects(init_json_path.string()) == 0);
+        static void SetUpTestCase() {
+            sw = new SimpleSwitch();
 
+            fs::path init_json_path = fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path(init_json);
+            _BM_ASSERT(sw->init_objects(init_json_path.string()) == 0);
+
+            sw->set_dev_mgr_packet_in(0, "inproc://packets", nullptr);
+            sw->Switch::start();
+            sw->set_packet_handler(packet_handler, static_cast<void*>(sw));
+            sw->start_and_return();
+        }
+
+        virtual void SetUp() override {
             fs::path new_json_file_path = fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path(new_json);
             new_json_file_stream = new std::ifstream(new_json_file_path.string(), std::ios::in);
         }
 
         virtual void TearDown() override {
             delete new_json_file_stream;
-         }
+        }
+
+        static void TearDownTestCase() {
+
+        }
+
+        static SimpleSwitch* sw;
 
         static const char* testdata_dir;
         static const char* testdata_folder;
@@ -50,6 +76,8 @@ const char* RuntimeConditionalReconfigCommandTest::testdata_folder = "runtime_co
 const char* RuntimeConditionalReconfigCommandTest::init_json = "runtime_conditional_reconfig_init.json";
 const char* RuntimeConditionalReconfigCommandTest::new_json = "runtime_conditional_reconfig_new.json";
 
+SimpleSwitch* RuntimeConditionalReconfigCommandTest::sw = nullptr;
+
 // test insert
 
 TEST_F(RuntimeConditionalReconfigCommandTest, ValidInsertCommand) {
@@ -57,7 +85,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, ValidInsertCommand) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::SUCCESS, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream,
                                                 &reconfig_commands_ss)));
 }
@@ -67,7 +95,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, InvalidInsertPrefix) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::PREFIX_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 }
@@ -78,7 +106,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, DuplicateInsert) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::DUP_CHECK_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 }
@@ -86,7 +114,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, DuplicateInsert) {
 TEST_F(RuntimeConditionalReconfigCommandTest, UnfoundInsertConditional) {
     std::stringstream reconfig_commands_ss("insert cond ingress new_node_unfound");
 
-    ASSERT_THROW(sw.mt_runtime_reconfig_with_stream(cxt_id, 
+    ASSERT_THROW(sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                     new_json_file_stream, 
                                                     &reconfig_commands_ss), std::out_of_range);
 }
@@ -98,7 +126,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, ValidChangeTest0) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::SUCCESS, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream,
                                                 &reconfig_commands_ss)));
 }
@@ -108,7 +136,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, ValidChangeTest1) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::SUCCESS, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream,
                                                 &reconfig_commands_ss)));
 }
@@ -118,7 +146,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, InvalidChangePrefix0) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::PREFIX_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 }
@@ -128,7 +156,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, InvalidChangePrefix1) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::PREFIX_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 }
@@ -138,7 +166,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, UnfoundChangeTarget0) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 }
@@ -148,7 +176,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, UnfoundChangeTarget1) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 }
@@ -160,7 +188,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, ValidDeleteTest) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::SUCCESS, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream,
                                                 &reconfig_commands_ss)));
 }
@@ -170,7 +198,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, InvalidDeletePrefix) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::PREFIX_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 }
@@ -180,7 +208,7 @@ TEST_F(RuntimeConditionalReconfigCommandTest, UnfoundDeleteTarget) {
 
     ASSERT_EQ(RuntimeReconfigErrorCode::UNFOUND_ID_ERROR, 
         static_cast<RuntimeReconfigErrorCode>(
-            sw.mt_runtime_reconfig_with_stream(cxt_id, 
+            sw->mt_runtime_reconfig_with_stream(cxt_id, 
                                                 new_json_file_stream, 
                                                 &reconfig_commands_ss)));
 }

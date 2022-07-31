@@ -121,3 +121,6 @@ doc-pak/
 backup-*
 description-pak
 *.deb
+
+# p4c intermediary files
+*.p4i

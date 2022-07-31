@@ -63,6 +63,7 @@ using bm::Field;
 using bm::FieldList;
 using bm::packet_id_t;
 using bm::p4object_id_t;
+using bm::P4Objects;
 
 class SimpleSwitch : public Switch {
  public:

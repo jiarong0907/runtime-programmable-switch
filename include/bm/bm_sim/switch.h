@@ -845,7 +845,6 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
 
     std::ofstream ofs(json_file+".new", std::ios::out);
     if (!ofs) {
-      std::cout << "Cannot open output file " << (json_file+".new") << "\n";
       BMLOG_ERROR("Error: cannot open output file: {}", json_file + ".new");
       return static_cast<int>(RuntimeReconfigErrorCode::OPEN_OUTPUT_FILE_FAIL);
     }
@@ -856,20 +855,20 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
     return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
   }
 
+  // this function should only be used for tests
   int
   mt_runtime_reconfig_with_stream(cxt_id_t cxt_id,
                                   std::istream* json_file_stream,
                                   std::istream* plan_file_stream,
                                   const std::string& output_json_file = "") {
-    int reconfig_return_code = static_cast<int>(
-      contexts.at(cxt_id).mt_runtime_reconfig_with_stream(json_file_stream, plan_file_stream,
-                                                          get_lookup_factory(),
-                                                          required_fields,
-                                                          arith_objects)
-                                  );
+    RuntimeReconfigErrorCode reconfig_return_code = 
+                                        contexts.at(cxt_id).mt_runtime_reconfig_with_stream(json_file_stream, plan_file_stream,
+                                                                                            get_lookup_factory(),
+                                                                                            required_fields,
+                                                                                            arith_objects);
 
-    if (reconfig_return_code != static_cast<int>(RuntimeReconfigErrorCode::SUCCESS)) {
-      return reconfig_return_code;
+    if (reconfig_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+      return static_cast<int>(reconfig_return_code);
     }
 
     if (output_json_file.empty()) {
@@ -879,7 +878,6 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
 
     std::ofstream ofs(output_json_file+".new", std::ios::out);
     if (!ofs) {
-      std::cout << "Cannot open output file " << (output_json_file+".new") << "\n";
       BMLOG_ERROR("Error: cannot open output file: {}", output_json_file + ".new");
       return static_cast<int>(RuntimeReconfigErrorCode::OPEN_OUTPUT_FILE_FAIL);
     }

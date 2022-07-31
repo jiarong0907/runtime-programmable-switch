@@ -122,7 +122,7 @@ control MyIngress(inout headers hdr,
     }
 
     action drop() {
-        mark_to_drop(standard_metadata);
+        // mark_to_drop(standard_metadata);
     }
 
     action ipv4_forward(bit<48> dstAddr, bit<9> port) {

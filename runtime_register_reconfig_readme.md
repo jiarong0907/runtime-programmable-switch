@@ -90,19 +90,12 @@ This is because, with a larger bloom filter (1024 entries in this case), it's ea
 ---
 ### How to run the tests:
 1. Compile the codes with `make -j4`
-2. To run `test_runtime_register_reconfig_commands` and `test_runtime_register_reconfig_p4objects`:
+2. Compile the tests with `make check -j4 TESTS=''`
+3. To run a certain test:
 
-    Enter `sudo make check TESTS='test_runtime_register_reconfig_commands test_runtime_register_reconfig_p4objects'`
-
-3. To run `test_runtime_register_reconfig_rehash`:
+    Enter `sudo make check TESTS='<test_name>'` under the folder where tests are located.
     
-    Go to `targets/simple_switch/tests`
-
-    Enter `sudo make check TESTS='test_runtime_register_reconfig_rehash'`
-
-4. See the test results:
-
-    Open the generated log files
+    Or, enter `./<test_name>`
 
 ---
 ### Reference:
