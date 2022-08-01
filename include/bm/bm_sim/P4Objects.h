@@ -331,7 +331,7 @@ class P4Objects {
                                        const std::string &edge_name,
                                        const std::string &dst_node_name);
   void change_register_array_size_rt(const std::string& name,
-                                     const std::string& register_array_size);
+                                     const std::string& new_register_array_size);
   void change_register_array_bitwidth_rt(const std::string& name,
                                          const std::string& register_array_bitwidth);
   void flex_trigger_rt(bool on);
