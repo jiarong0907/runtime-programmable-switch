@@ -333,7 +333,7 @@ class P4Objects {
   void change_register_array_size_rt(const std::string& name,
                                      const std::string& new_register_array_size);
   void change_register_array_bitwidth_rt(const std::string& name,
-                                         const std::string& register_array_bitwidth);
+                                         const std::string& new_register_array_bitwidth);
   void flex_trigger_rt(bool on);
   void delete_flex_rt(const std::string &pipeline_name,
                       const std::string &name);
