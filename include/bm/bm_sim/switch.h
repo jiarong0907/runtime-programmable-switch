@@ -832,11 +832,19 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
   mt_runtime_reconfig(cxt_id_t cxt_id,
                       const std::string &json_file,
                       const std::string &plan_file) {
-    int reconfig_return_code = static_cast<int>(contexts.at(cxt_id).mt_runtime_reconfig(json_file, 
-                                                                                        plan_file,
-                                                                                        get_lookup_factory(),
-                                                                                        required_fields,
-                                                                                        arith_objects));
+    std::ifstream json_file_stream(json_file, std::ios::in);
+    if (!json_file_stream) {
+      BMLOG_ERROR("JSON input file {} can't be opened", json_file);
+      return static_cast<int>(RuntimeReconfigErrorCode::OPEN_JSON_FILE_FAIL);
+    }
+
+    std::ifstream plan_file_stream(plan_file);
+    if (!plan_file_stream) {
+      BMLOG_ERROR("Open plan file {} failed", plan_file);
+      return static_cast<int>(RuntimeReconfigErrorCode::OPEN_PLAN_FILE_FAIL);
+    }
+
+    int reconfig_return_code = mt_runtime_reconfig_with_stream(0, &json_file_stream, &plan_file_stream);
 
     if (reconfig_return_code != static_cast<int>(RuntimeReconfigErrorCode::SUCCESS)) {
       return reconfig_return_code;
