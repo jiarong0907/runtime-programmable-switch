@@ -343,16 +343,14 @@ class P4Objects {
                              const std::string &name);
   void delete_register_array_rt(const std::string& name);
 
+#ifndef BM_DISABLE_REHASH
   //! Rehashes the target register array referring to the provided parameters.
   //! 
   //! It's designed for the convenience of SYN_flooding_protection's demonstration. 
-  //! The target_register_array is the original counting bloom filter for the 
-  //! defence of malicious SYN flooding attacks, which we need to enlarge this register array to
-  //! degrade the error rate of protection during reconfiguration. 
-  //! To this end, some additional parameters are needed, such as a register array storing the clients' IP addresses ("recording_register_array") and 
-  //! another container recording the frequency of access for each client ("recording_counting_register_array").
-  //! 
   //!
+  //! Now, this rehash function is very straightforward. We assume that all historical recordings are accessible,
+  //! and the rehash process is just to apply the hash function on these recordings again.
+  //! 
   //! Runtime command:
   //! @code
   //! rehash register_array <target_register_array> 
@@ -363,25 +361,26 @@ class P4Objects {
   //!
   //! @endcode
   //!
-  //! @param target_register_array the register array to be rehashed.
-  //! @param recording_register_array  the register array recording the source of target register array.
-  //! (As for demo SYN_flooding_protection, it stores the IP address of incoming clients.)
-  //! @param recording_last_pos_register_array the register array of size 1, which indicates the last position of recording_register_array.
+  //! @param target_register_array the register array which accepts the rehash results.
+  //! @param recording_register_array  the register array holding the historical recordings.
+  //! (As for the demo SYN_flooding_protection, it stores the IP addresses of packets.)
+  //! @param recording_last_pos_register the register which points to the end of recording register array.
   //! @param recording_counting_register_array the register array counting the number of accesses.
-  //! (As for demo SYN_flooding_protection, each SYN message will increase the counting by 1. In contrast, each ACK message will result in opposite effect.)
-  //! @param hash_function_for_counting the hash function for recording_counting_register_array. 
-  //! (As for demo SYN_flooding_protection, hash(IPv4_address) => pos_in_recording_counting_register_array.)
-  //! @param pos_hash_functions the hash functions for target_register_array.
-  //! (As for demo SYN_flooding_protection, hash(IPv4_address) => pos_in_target_register_array.)
+  //! (As for the demo SYN_flooding_protection, it counts the number of SYN packets going through the switch for each IP address.)
+  //! @param hash_function_for_counting the hash function used by recording_counting_register_array. 
+  //! (As for the demo SYN_flooding_protection, hash(IPv4_address) => a pos in recording_counting_register_array.)
+  //! @param pos_hash_functions the hash functions for rehashing.
+  //! (As for the demo SYN_flooding_protection, hash(IPv4_address) => a pos in target_register_array.)
   //! @param register_array_to_be_reset the register array to be reset after rehashing.
-  //! (As for demo SYN_flooding_protection, we reset the time stamp register array after each rehashing.)
+  //! (As for the demo SYN_flooding_protection, we reset the time stamp register array after each rehashing.)
   void rehash_register_array_rt(const std::string &target_register_array,
                              const std::string &recording_register_array, 
-                             const std::string &recording_last_pos_register_array, 
+                             const std::string &recording_last_pos_register, 
                              const std::string &recording_counting_register_array,
                              const std::string &hash_function_for_counting,
                              const std::vector<std::string> &pos_hash_functions,
                              const std::string &register_array_to_be_reset);
+#endif
   void insert_parse_state_rt(std::shared_ptr<P4Objects> p4objects_new,
                              const std::string &parser_name,
                              const std::string &name);

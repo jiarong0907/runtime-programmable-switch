@@ -163,7 +163,6 @@ Context::mt_runtime_reconfig(const std::string &json_file,
   }
 }
 
-// this function should only be used for tests
 RuntimeReconfigErrorCode
 Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
                                         std::istream* plan_file_stream,
@@ -344,6 +343,7 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
         }
       }
     } else if (op == "rehash") {
+#ifndef BM_DISABLE_REHASH
       if (target != "register_array") {
         BMLOG_ERROR("Error: rehash command can only have register_array as its target, but you enter {}", target);
         return RuntimeReconfigErrorCode::UNSUPPORTED_TARGET_ERROR;
@@ -463,10 +463,15 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
                                             hash_function_for_counting,
                                             pos_hash_functions,
                                             register_array_to_be_reset);
+
+#else
+      BMLOG_ERROR("Error: now, we don't support rehash");
+#endif
+    } else {
+      BMLOG_ERROR("Error: unsupport operation {}", op);
     }
   }
-
-  return RuntimeReconfigErrorCode::SUCCESS;
+  return RuntimeReconfigErrorCode::SUCCESS;      
 }
 
 MatchErrorCode

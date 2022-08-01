@@ -3449,17 +3449,19 @@ P4Objects::delete_register_array_rt(const std::string& name) {
   remove_json_value("register_array", name);
 }
 
+
+#ifndef BM_DISABLE_REHASH
 void 
 P4Objects::rehash_register_array_rt(const std::string &target_register_array,
                                   const std::string &recording_register_array,
-                                  const std::string &recording_last_pos_register_array,
+                                  const std::string &recording_last_pos_register,
                                   const std::string &recording_counting_register_array,
                                   const std::string &hash_function_for_counting,
                                   const std::vector<std::string> &pos_hash_functions,
                                   const std::string &register_array_to_be_reset) {
   RegisterArray* target_register_array_ptr = get_register_array(target_register_array);
   RegisterArray* recording_register_array_ptr = get_register_array(recording_register_array);
-  RegisterArray* recording_last_pos_register_array_ptr = get_register_array(recording_last_pos_register_array);
+  RegisterArray* recording_last_pos_register_ptr = get_register_array(recording_last_pos_register);
   RegisterArray* recording_counting_register_array_ptr = get_register_array(recording_counting_register_array);
   RegisterArray* register_array_to_be_reset_ptr = get_register_array(register_array_to_be_reset);
 
@@ -3480,14 +3482,14 @@ P4Objects::rehash_register_array_rt(const std::string &target_register_array,
   RegisterSync register_sync;
   register_sync.add_register_array(target_register_array_ptr);
   register_sync.add_register_array(recording_register_array_ptr);
-  register_sync.add_register_array(recording_last_pos_register_array_ptr);
+  register_sync.add_register_array(recording_last_pos_register_ptr);
   register_sync.add_register_array(recording_counting_register_array_ptr);
 
   {
     RegisterSync::RegisterLocks RL;
     register_sync.lock(&RL);
 
-    uint32_t recording_last_pos = recording_last_pos_register_array_ptr->at(0).get<uint32_t>();
+    uint32_t recording_last_pos = recording_last_pos_register_ptr->at(0).get<uint32_t>();
     for (uint32_t i = 0; i < recording_last_pos; i++) {
       uint32_t recording_val = recording_register_array_ptr->at(i).get<uint32_t>();
 
@@ -3513,6 +3515,7 @@ P4Objects::rehash_register_array_rt(const std::string &target_register_array,
  
   register_array_to_be_reset_ptr->reset_state();
 }
+#endif
 
 void
 P4Objects::insert_parse_state_rt(std::shared_ptr<P4Objects> p4objects_new,

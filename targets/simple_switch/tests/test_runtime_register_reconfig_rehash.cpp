@@ -16,6 +16,8 @@
 
 #include "utils.h"
 
+
+#ifndef BM_DISABLE_REHASH
 namespace fs = boost::filesystem;
 
 using bm::MatchErrorCode;
@@ -310,3 +312,4 @@ TEST_F(RuntimeRegisterReconfigRehashTest, RehashCheck) {
 
     ASSERT_TRUE(counting_correct);
 }
+#endif

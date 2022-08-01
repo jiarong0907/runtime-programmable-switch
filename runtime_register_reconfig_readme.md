@@ -8,12 +8,27 @@
     - `delete register_array <name>`
     - `change register_array_size <size>`
     - `change register_array_bitwidth <width>`
-    - `rehash register_array <target_register_array> 
-        --according-to <recording_register_array> <recording_last_pos_register_array> <recording_counting_register_array> 
-        --hash-function-for-counting <hash_function> 
-        --hash-function-for-target <first_pos_hash_function> <second_pos_hash_function> ... <nth_pos_hash_function> 
-        --reset <time_stamp_register_array>`
+    - <code>rehash register_array <target_register_array> </br>
+        --according-to <recording_register_array> <recording_last_pos_register> <recording_counting_register_array> </br>
+        --hash-function-for-counting <hash_function> </br> 
+        --hash-function-for-target <first_pos_hash_function> <second_pos_hash_function> ... <nth_pos_hash_function> </br>
+        --reset <time_stamp_register_array></code>
 
+        (Please note that, this rehash function is very straight forward, and should only be used with SYN_flooding_protection demo)
+
+        `target_register_array`: the register array which accepts the rehash results
+        
+        `recording_register_array`: the register array holding the historical recordings
+
+        `recording_last_pos_register`: the register which points to the end of recording register array
+
+        `recording_counting_register_array`: the register array counting the number of accesses
+
+        `hash_function_for_counting`: the hash function used by recording_counting_register_array
+
+        `pos_hash_functions`: the hash functions for rehashing
+
+        `register_array_to_be_reset`: the register array to be reset after rehashing        
 
 - New demo:
     - Defence SYN flooding attack [1]
@@ -22,10 +37,17 @@
     - `test_runtime_register_reconfig_commands`
     - `test_runtime_register_reconfig_p4objects`
     - `test_runtime_register_reconfig_rehash`
+    - `test_runtime_table_reconfig_commands`
+    - `test_runtime_table_reconfig_p4objects`
+    - `test_runtime_conditional_reconfig_commands`
+    - `test_runtime_conditional_reconfig_p4objects`
+    - `test_runtime_flex_reconfig_commands`
+    - `test_runtime_flex_reconfig_p4objects`
+    - `test_runtime_flex_reconfig_trigger`
 
 ---
 ### How to run the demo:
-1. Recompile the bmv2 from the updated source code.
+1. Recompile the bmv2 from the updated source code. (By default, we disable the rehash function. If you want to run this demo, please use `--enable-rehash` flag when doing `./configure`)
 2. Go to `runtime_examples/SYN_flooding_protection/app/`.
 3. Run `./run.sh`. It will build up a network comprising of three hosts (`h1, h2, h3`) and one switch (`s1`). 
 
@@ -57,7 +79,7 @@ h1 and h2 are clients, and h3 is the server. h1 will attack h3 using SYN floodin
     `h1 python3 ./attacker_send.py 10.0.1.22 attack >> h1_log.log &` 
     
     (This will send SYN packets with pseudo IP src addresses `192.168.7.0-192.168.7.255` to `h3`.)
-5. After a few seconds, enter the command `h2 python3 ./error_rate_checker.py 10.0.1.22`.
+5. After a few seconds, enter the command `h2 python3 ./normal_user_send.py 10.0.1.22`.
     
     (This will establish TCP connections between `192.168.1.0-192.168.1.255` and `h3`.)
 
@@ -71,7 +93,7 @@ You will see some outputs like
     timeout
     ...
 ```
-This shows that, when the bloom filter's capacity is low (128 in this case), it might be possible for switch to prevent some legal users (such as `h2`) from getting in touch with the server (in this case `h3`, at `10.0.1.22`).
+This shows that, when the bloom filter's capacity is low (128 in this case), it suffers from high false positive rate and can intercept legitimate flows.
 
 6. Then, try to enlarge the bloom filter. Open a new terminal and go to `build` folder.
 7. In this new terminal, run `simple_switch_CLI --thrift-port 9090` and, then, `runtime_reconfig new_SYN_flooding_protection.json reconfiguration_command.txt`

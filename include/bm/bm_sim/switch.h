@@ -832,12 +832,11 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
   mt_runtime_reconfig(cxt_id_t cxt_id,
                       const std::string &json_file,
                       const std::string &plan_file) {
-    int reconfig_return_code = static_cast<int>(
-      contexts.at(cxt_id).mt_runtime_reconfig(json_file, plan_file,
-                                                  get_lookup_factory(),
-                                                  required_fields,
-                                                  arith_objects)
-                          );
+    int reconfig_return_code = static_cast<int>(contexts.at(cxt_id).mt_runtime_reconfig(json_file, 
+                                                                                        plan_file,
+                                                                                        get_lookup_factory(),
+                                                                                        required_fields,
+                                                                                        arith_objects));
 
     if (reconfig_return_code != static_cast<int>(RuntimeReconfigErrorCode::SUCCESS)) {
       return reconfig_return_code;
@@ -855,17 +854,17 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
     return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
   }
 
-  // this function should only be used for tests
+  // this function should only be explicitly called from test codes
   int
   mt_runtime_reconfig_with_stream(cxt_id_t cxt_id,
                                   std::istream* json_file_stream,
                                   std::istream* plan_file_stream,
                                   const std::string& output_json_file = "") {
-    RuntimeReconfigErrorCode reconfig_return_code = 
-                                        contexts.at(cxt_id).mt_runtime_reconfig_with_stream(json_file_stream, plan_file_stream,
-                                                                                            get_lookup_factory(),
-                                                                                            required_fields,
-                                                                                            arith_objects);
+    RuntimeReconfigErrorCode reconfig_return_code = contexts.at(cxt_id).mt_runtime_reconfig_with_stream(json_file_stream, 
+                                                                                                        plan_file_stream,
+                                                                                                        get_lookup_factory(),
+                                                                                                        required_fields,
+                                                                                                        arith_objects);
 
     if (reconfig_return_code != RuntimeReconfigErrorCode::SUCCESS) {
       return static_cast<int>(reconfig_return_code);
@@ -886,7 +885,6 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
 
     std::cout << "table reconfig successfully" << std::endl;
     return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
-
   }
 
   // ---------- End RuntimeInterface ----------

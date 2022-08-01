@@ -70,9 +70,7 @@ test_enums \
 test_core_primitives \
 test_control_flow \
 test_assert_assume \
-test_log_msg \
-test_runtime_register_reconfig_commands \
-test_runtime_register_reconfig_p4objects
+test_log_msg
 
 check_PROGRAMS = $(TESTS) test_all
 
@@ -114,8 +112,6 @@ test_core_primitives_SOURCES = $(common_source) test_core_primitives.cpp
 test_control_flow_SOURCES    = $(common_source) test_control_flow.cpp
 test_assert_assume_SOURCES   = $(common_source) test_assert_assume.cpp
 test_log_msg_SOURCES         = $(common_source) test_log_msg.cpp
-test_runtime_register_reconfig_commands_SOURCES = $(common_source) test_runtime_register_reconfig_commands.cpp
-test_runtime_register_reconfig_p4objects_SOURCES = $(common_source) test_runtime_register_reconfig_p4objects.cpp
 
 test_all_SOURCES = $(common_source) \
 test_actions.cpp \
@@ -154,9 +150,7 @@ test_enums.cpp \
 test_core_primitives.cpp \
 test_control_flow.cpp \
 test_assert_assume.cpp \
-test_log_msg.cpp \
-test_runtime_register_reconfig_commands.cpp \
-test_runtime_register_reconfig_p4objects.cpp
+test_log_msg.cpp
 
 EXTRA_DIST = \
 testdata/en0.pcap \
@@ -178,8 +172,4 @@ testdata/unions_e2e_options_bos.json \
 testdata/unions_e2e_options_count.json \
 testdata/test_logging.json \
 testdata/pvs_struct_2.p4 \
-testdata/pvs_struct_2.json \
-testdata/runtime_register_reconfig/exist_json.json \
-testdata/runtime_register_reconfig/exist_plan.txt \
-testdata/runtime_register_reconfig/runtime_register_reconfig_init.json \
-testdata/runtime_register_reconfig/runtime_register_reconfig_init.p4
+testdata/pvs_struct_2.json

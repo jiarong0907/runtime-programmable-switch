@@ -95,6 +95,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, ValidDeleteCommand) {
                                                 &reconfig_commands_ss)));
 }
 
+#ifndef BM_DISABLE_REHASH
 TEST_F(RuntimeRegisterReconfigCommandTest, ValidRehashCommand) {
     std::istringstream new_json_file_ss("{}");
     std::istringstream reconfig_commands_ss("rehash register_array old_defence_bloom_filter_for_ip_src "
@@ -109,6 +110,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, ValidRehashCommand) {
                                                 &new_json_file_ss, 
                                                 &reconfig_commands_ss)));
 }
+#endif
 
 TEST_F(RuntimeRegisterReconfigCommandTest, NonexistentJsonFile) {
     fs::path nonexistent_json = fs::path(testdata_dir) / fs::path(testdata_folder) / fs::path("nonexistent.file");
@@ -232,6 +234,7 @@ TEST_F(RuntimeRegisterReconfigCommandTest, InvalidDeletePrefix) {
                                                 &reconfig_commands_ss)));
 }
 
+#ifndef BM_DISABLE_REHASH
 TEST_F(RuntimeRegisterReconfigCommandTest, InvalidRehashTarget) {
     std::istringstream new_json_file_ss("{}");
     std::istringstream reconfig_commands_ss("rehash tbl old_defence_bloom_filter_for_ip_src "
@@ -439,5 +442,5 @@ TEST_F(RuntimeRegisterReconfigCommandTest, NoTimeStampRegisterArray) {
                                                 &new_json_file_ss, 
                                                 &reconfig_commands_ss)));
 }
-
+#endif
 

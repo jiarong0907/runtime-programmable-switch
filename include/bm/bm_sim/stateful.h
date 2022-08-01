@@ -175,6 +175,9 @@ class RegisterArray : public NamedP4Object {
   // NOLINTNEXTLINE(runtime/references)
   void unlock(UniqueLock &lock) const { lock.unlock(); }
 
+  //! Exchange the underlying memory of this register array with registers_new.
+  //! This function is used to quickly update the content of a register array.
+  //! @param registers_new a vector of new registers to be swapped with the registers in this register array
   void reset_registers_with(std::vector<Register>& registers_new) { 
     registers.swap(registers_new); 
     registers_new.clear();
