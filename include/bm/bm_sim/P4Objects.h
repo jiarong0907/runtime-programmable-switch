@@ -343,44 +343,6 @@ class P4Objects {
                              const std::string &name);
   void delete_register_array_rt(const std::string& name);
 
-#ifndef BM_DISABLE_REHASH
-  //! Rehashes the target register array referring to the provided parameters.
-  //! 
-  //! It's designed for the convenience of SYN_flooding_protection's demonstration. 
-  //!
-  //! Now, this rehash function is very straightforward. We assume that all historical recordings are accessible,
-  //! and the rehash process is just to apply the hash function on these recordings again.
-  //! 
-  //! Runtime command:
-  //! @code
-  //! rehash register_array <target_register_array> 
-  //! --according-to <recording_register_array> <recording_last_pos_register_array> <recording_counting_register_array> 
-  //! --hash-function-for-counting <hash_function> 
-  //! --hash-function-for-target <first_pos_hash_function> <second_pos_hash_function> ... <nth_pos_hash_function> 
-  //! --reset <time_stamp_register_array>
-  //!
-  //! @endcode
-  //!
-  //! @param target_register_array the register array which accepts the rehash results.
-  //! @param recording_register_array  the register array holding the historical recordings.
-  //! (As for the demo SYN_flooding_protection, it stores the IP addresses of packets.)
-  //! @param recording_last_pos_register the register which points to the end of recording register array.
-  //! @param recording_counting_register_array the register array counting the number of accesses.
-  //! (As for the demo SYN_flooding_protection, it counts the number of SYN packets going through the switch for each IP address.)
-  //! @param hash_function_for_counting the hash function used by recording_counting_register_array. 
-  //! (As for the demo SYN_flooding_protection, hash(IPv4_address) => a pos in recording_counting_register_array.)
-  //! @param pos_hash_functions the hash functions for rehashing.
-  //! (As for the demo SYN_flooding_protection, hash(IPv4_address) => a pos in target_register_array.)
-  //! @param register_array_to_be_reset the register array to be reset after rehashing.
-  //! (As for the demo SYN_flooding_protection, we reset the time stamp register array after each rehashing.)
-  void rehash_register_array_rt(const std::string &target_register_array,
-                             const std::string &recording_register_array, 
-                             const std::string &recording_last_pos_register, 
-                             const std::string &recording_counting_register_array,
-                             const std::string &hash_function_for_counting,
-                             const std::vector<std::string> &pos_hash_functions,
-                             const std::string &register_array_to_be_reset);
-#endif
   void insert_parse_state_rt(std::shared_ptr<P4Objects> p4objects_new,
                              const std::string &parser_name,
                              const std::string &name);
