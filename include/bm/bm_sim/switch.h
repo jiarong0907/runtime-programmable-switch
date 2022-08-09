@@ -862,7 +862,9 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
     return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
   }
 
-  // this function should only be explicitly called from test codes
+   // This function aims to:
+  // 1. To be called by mt_runtime_reconfig
+  // 2. To be used in tests for the convenience of getting commands directly
   int
   mt_runtime_reconfig_with_stream(cxt_id_t cxt_id,
                                   std::istream* json_file_stream,

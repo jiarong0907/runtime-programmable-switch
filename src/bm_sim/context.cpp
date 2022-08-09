@@ -77,6 +77,8 @@ Context::mt_add_entry(const std::string &table_name,
 }
 
 // helper function for FlexCore
+// It will return 0, if success
+// Otherwise, return 1 if the id is unfound, or return 2 if the prefix is wrong
 int 
 convert_id_to_name(std::unordered_map<std::string, std::string> &id2newNodeName, 
     std::string *out, std::string *in, int size) {
@@ -90,7 +92,6 @@ convert_id_to_name(std::unordered_map<std::string, std::string> &id2newNodeName,
     if (prefix == "new"
         || prefix == "flx") {
       if (id2newNodeName.find(in[i]) == id2newNodeName.end()) {
-        std::cout << "Error: cannot find the id " << in[i] << " from id2newNodeName\n";
         BMLOG_ERROR("Error: cannot find the id {} from id2newNodeName", in[i]);
         return 1;
       }
@@ -98,7 +99,6 @@ convert_id_to_name(std::unordered_map<std::string, std::string> &id2newNodeName,
     } else if (prefix == "old") {
       out[i] = actual_name;
     } else {
-      std::cout << "Error: prefix " << prefix << " has no match\n";
       BMLOG_ERROR("Error: prefix {} has no match", prefix);
       return 2;
     }
@@ -112,7 +112,6 @@ int
 dup_check(const std::unordered_map<std::string, std::string> &id2newNodeName, 
     const std::string &name) {
   if (id2newNodeName.find(name) != id2newNodeName.end()) {
-    std::cout << "Error: Duplicated id " << name << " from id2newNodeName\n";
     BMLOG_ERROR("Error: Duplicated id {} from id2newNodeName", name);
     return 1;
   }
@@ -123,7 +122,6 @@ dup_check(const std::unordered_map<std::string, std::string> &id2newNodeName,
 int 
 hash_function_check(const std::string& name) {
   if (!CalculationsMap::get_instance()->get_copy(name)) {
-    std::cout << "Error: can't find the hash function by name: " << name << std::endl;
     BMLOG_ERROR("Error: can't find the hash function by name: {}", name);
     return 1;
   }

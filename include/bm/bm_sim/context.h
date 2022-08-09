@@ -200,7 +200,9 @@ class Context final {
                       const std::set<P4Objects::header_field_pair> &required_fields,
                       const P4Objects::ForceArith &arith_objects);
 
-  // This function should only be explicitly called from test codes
+  // This function aims to:
+  // 1. To be called by mt_runtime_reconfig
+  // 2. To be used in tests for the convenience of getting commands directly
   RuntimeReconfigErrorCode
   mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
                                   std::istream* plan_file_stream,
