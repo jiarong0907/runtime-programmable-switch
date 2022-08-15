@@ -63,6 +63,7 @@ using bm::Field;
 using bm::FieldList;
 using bm::packet_id_t;
 using bm::p4object_id_t;
+using bm::P4Objects;
 
 class SimpleSwitch : public Switch {
  public:
@@ -121,6 +122,16 @@ class SimpleSwitch : public Switch {
   // returns the packet id of most recently received packet. Not thread-safe.
   static packet_id_t get_packet_id() {
     return packet_id - 1;
+  }
+
+  // this should only be used for tests
+  P4Objects* get_p4objects_rt() {
+    return get_context(0)->get_p4objects_rt();
+  }
+
+  // this should only be used for tests
+  P4Objects* get_p4objects_new() {
+    return get_context(0)->get_p4objects_new();
   }
 
   void set_transmit_fn(TransmitFn fn);

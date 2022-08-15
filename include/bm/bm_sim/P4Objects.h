@@ -301,6 +301,10 @@ class P4Objects {
                                     const std::string &name,
                                     const std::string &old_next_name,
                                     const std::string &new_next_name);
+  const Json::Value build_register_array_json_value(int id,
+                                          const std::string &name,
+                                          const std::string &register_array_size,
+                                          const std::string &register_array_bitwidth);
 
   const std::string insert_match_table_rt(std::shared_ptr<P4Objects> p4objects_new,
                                           const std::string &pipeline_name,
@@ -313,6 +317,9 @@ class P4Objects {
   const std::string insert_flex_rt(const std::string &pipeline_name,
                                    const std::string &old_next_name,
                                    const std::string &new_next_name);
+  const std::string insert_register_array_rt(const std::string& name,
+                                             const std::string& register_array_size,
+                                             const std::string& register_array_bitwidth);
   void change_init_node_rt(const std::string &pipeline_name,
                            const std::string &dst_node_name);
   void change_table_next_node_rt(const std::string &pipeline_name,
@@ -323,6 +330,10 @@ class P4Objects {
                                        const std::string &src_conditional_name,
                                        const std::string &edge_name,
                                        const std::string &dst_node_name);
+  void change_register_array_size_rt(const std::string& name,
+                                     const std::string& new_register_array_size);
+  void change_register_array_bitwidth_rt(const std::string& name,
+                                         const std::string& new_register_array_bitwidth);
   void flex_trigger_rt(bool on);
   void delete_flex_rt(const std::string &pipeline_name,
                       const std::string &name);
@@ -330,6 +341,8 @@ class P4Objects {
                              const std::string &name);
   void delete_match_table_rt(const std::string &pipeline_name,
                              const std::string &name);
+  void delete_register_array_rt(const std::string& name);
+
   void insert_parse_state_rt(std::shared_ptr<P4Objects> p4objects_new,
                              const std::string &parser_name,
                              const std::string &name);
@@ -339,6 +352,10 @@ class P4Objects {
                             const std::string &dst_state_name);
 
   void print_cfg(std::ostream &os);
+
+  const Json::Value& get_cfg() {
+    return cfg_root;
+  }
 
  private:
   // The get_*_cfg are used during json parsing: they will throw a
@@ -409,6 +426,8 @@ class P4Objects {
   void add_control_node(const std::string &name, ControlFlowNode *node);
 
   void remove_control_node(const std::string &name);
+
+  void remove_register_array(const std::string& name);
 
   ControlFlowNode *get_control_node_cfg(const std::string &name) const;
 
@@ -614,6 +633,7 @@ class P4Objects {
   int tableIdCount;
   int actionIdCount;
   int conditionalIdCount;
+  int registerArrayIdCount;
   std::unordered_map<std::string, int> parseStateIdCount;
   int conditionalNameMax;
 
@@ -628,6 +648,7 @@ class P4Objects {
   std::unordered_map<std::string, Json::Value*> cfg_parsers_map{};
   std::unordered_map<std::string, Json::Value*> cfg_parser_parse_states_map{};
   std::unordered_map<std::string, Json::Value*> cfg_parse_states_map{};
+  std::unordered_map<std::string, Json::Value*> cfg_register_arrays_map{};
 
  private:
   int get_field_offset(header_id_t header_id,

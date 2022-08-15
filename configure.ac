@@ -119,6 +119,14 @@ AC_ARG_ENABLE([WP4-16-stacks],
 AS_IF([test "$enable_WP4_16_stacks" = "yes"],
       [AC_DEFINE([WP4_16_STACKS], [], [Implement stacks as per P4_16 spec])])
 
+# Added by Yicun Duan
+want_rehash=no
+AC_ARG_ENABLE([rehash], 
+    AS_HELP_STRING([--enable-rehash], [Enable the rehash function and tests for bmv2]), 
+    [want_rehash=yes], [])
+AS_IF([test "$want_rehash" = "no"], 
+      [AC_DEFINE([DISABLE_REHASH], [], [Disable the rehash function and tests in bmv2])])
+
 # Checks for programs.
 AC_PROG_CXX
 AC_PROG_CC
@@ -326,3 +334,5 @@ AS_ECHO("Debugger enabled .............. : $debugger_enabled")
 AS_ECHO("With Thrift ................... : $want_thrift")
 AS_ECHO("With pdfixed .................. : $want_pdfixed")
 AS_ECHO("With PI ....................... : $want_pi")
+# Added by Yicun Duan
+AS_ECHO("Rehash enabled ................ : $want_rehash")

@@ -22,6 +22,7 @@
 #include <bm/bm_sim/P4Objects.h>
 #include <bm/bm_sim/phv.h>
 #include <bm/bm_sim/actions.h>
+#include <bm/bm_sim/logger.h>
 
 #include <iostream>
 #include <istream>
@@ -32,6 +33,7 @@
 #include <set>
 #include <unordered_set>
 #include <exception>
+#include <algorithm>
 
 #include "crc_map.h"
 
@@ -1441,6 +1443,15 @@ P4Objects::init_meter_arrays(const Json::Value &cfg_root,
 
 void
 P4Objects::init_register_arrays(const Json::Value &cfg_root) {
+  {
+    // create map for updating json for runtime_CLI
+    Json::Value &cfg_register_arrays = this->cfg_root["register_arrays"];
+    for (auto &cfg_register_array : cfg_register_arrays) {
+      const string register_array_name = cfg_register_array["name"].asString();
+      map_json_value("register_array", register_array_name, &cfg_register_array);
+    }
+  }
+
   DupIdChecker dup_id_checker("register");
   const Json::Value &cfg_register_arrays = cfg_root["register_arrays"];
   for (const auto &cfg_register_array : cfg_register_arrays) {
@@ -2190,6 +2201,7 @@ P4Objects::init_objects(std::istream *is,
   actionIdCount = 0;
   conditionalIdCount = 0;
   conditionalNameMax = 0;
+  registerArrayIdCount = 0;
   Json::Value cfg_root;
   (*is) >> cfg_root;
 
@@ -2650,6 +2662,13 @@ P4Objects::map_json_value(const std::string &type, const std::string &name,
     } else {
       cfg_parse_states_map[cfg_parse_state_id] = val;
     }
+  } else if (type == "register_array") {
+    if (cfg_register_arrays_map.find(name) != cfg_register_arrays_map.end()) {
+      std::cout << "map_json_value: duplicated register_array name: " << name << std::endl;
+      BMLOG_ERROR("map_json_value: duplicated register_array name: {}", name);
+    } else {
+      cfg_register_arrays_map[name] = val;
+    }
   } else {
     std::cout << "map_json_value: type not supported" << std::endl;
   }
@@ -2698,6 +2717,14 @@ P4Objects::add_json_value(const std::string &type, const std::string &name,
       Json::Value &added = cfg_parser_parse_states_map[parser_name]->append(val);
       map_json_value(parser_name+" parse state", name, &added);
     }
+  } else if (type == "register_array") {
+    if (cfg_register_arrays_map.find(name) != cfg_register_arrays_map.end()) {
+      std::cout << "add_json_value: duplicated register_array name: " << name << std::endl;
+      BMLOG_ERROR("add_json_value: duplicated register_array name: {}", name);
+    } else {
+      Json::Value& added = cfg_root["register_arrays"].append(val);
+      map_json_value("register_array", name, &added);
+    }
   } else {
     std::cout << "add_json_value: type not supported" << std::endl;
   }
@@ -2731,6 +2758,31 @@ P4Objects::remove_json_value(const std::string &type, const std::string &name) {
         }
       }
       (*cfg_pipeline_conditionals_map[pipeline_name]) = newArray;
+    }
+  } else if (type == "register_array"){
+    if (cfg_register_arrays_map.find(name) == cfg_register_arrays_map.end()) {
+      std::cout << "remove_json_value: no register_array name: " << name << std::endl;
+      BMLOG_ERROR("remove_json_value: no register_array name: {}", name);
+    } else {
+      Json::ArrayIndex register_array_index = 0;
+      for (auto& cfg_register_array : cfg_root["register_arrays"]) {
+        if (cfg_register_array["name"] == name) {
+          Json::Value removed;
+          // please note that "removeIndex" will reallocate the cfg_root["register_arrays"] after the remove operation
+          cfg_root["register_arrays"].removeIndex(register_array_index, &removed);
+          break;
+        }
+
+        register_array_index++;
+      }
+
+      // update the cfg_register_arrays_map, because: 
+      // (1) we need to remove the deleted register_array with name "name"
+      // (2) underlying memory of cfg_root["register_arrays"] is changed, due to the effect of "removeIndex" in previous steps
+      cfg_register_arrays_map.erase(name);
+      for (auto& cfg_register_array : cfg_root["register_arrays"]) {
+        cfg_register_arrays_map[cfg_register_array["name"].asString()] = &cfg_register_array;
+      }
     }
   } else {
     std::cout << "remove_json_value: type not supported" << std::endl;
@@ -2769,6 +2821,13 @@ P4Objects::modify_json_value(const std::string &type, const std::string &name,
       std::cout << "modify_json_value: cannot find parse_state name: " << cfg_parse_state_id << std::endl;
     } else {
       (*cfg_parse_states_map[cfg_parse_state_id])[field_name] = val;
+    }
+  } else if (type == "register_array") {
+    if (cfg_register_arrays_map.find(name) == cfg_register_arrays_map.end()) {
+      std::cout << "modify_json_value: cannot find register_array name: " << name << std::endl;
+      BMLOG_ERROR("modify_json_value: cannot find register_array name: {}", name);
+    } else {
+      (*cfg_register_arrays_map[name])[field_name] = val;
     }
   } else {
     std::cout << "modify_json_value: type not supported" << std::endl;
@@ -2889,6 +2948,14 @@ P4Objects::get_json_value(const std::string &type, const std::string &name) {
       return nullptr;
     } else {
       return cfg_parse_states_map[cfg_parse_state_id];
+    }
+  } else if (type == "register_array") {
+    if (cfg_register_arrays_map.find(name) == cfg_register_arrays_map.end()) {
+      std::cout << "get_json_value: cannot find register_array name: " << name << std::endl;
+      BMLOG_ERROR("get_json_value: cannot find register_array name: {}", name);
+      return nullptr;
+    } else {
+      return cfg_register_arrays_map[name];
     }
   } else {
     std::cout << "get_json_value: type not supported" << std::endl;
@@ -3034,7 +3101,31 @@ P4Objects::insert_conditional_rt(std::shared_ptr<P4Objects> p4objects_new,
   return new_name;
 }
 
+const std::string 
+P4Objects::insert_register_array_rt(const std::string &name,
+                                    const std::string &register_array_size,
+                                    const std::string &register_array_bitwidth) {
+      DupIdChecker dup_id_checker_register_array("register_array");
+      if (registerArrayIdCount == 0) {
+        registerArrayIdCount = register_arrays.size();
+      }
+      p4object_id_t new_register_array_id = registerArrayIdCount++;
+      dup_id_checker_register_array.add(new_register_array_id);
 
+      std::string new_register_array_name = name + "$" + std::to_string(new_register_array_id);
+
+      RegisterArray *register_array = new RegisterArray(new_register_array_name, new_register_array_id, 
+                                                        std::stoi(register_array_size), 
+                                                        std::stoi(register_array_bitwidth));
+
+      add_register_array(new_register_array_name, unique_ptr<RegisterArray>(register_array));
+
+      add_json_value("register_array", new_register_array_name, 
+                      build_register_array_json_value(new_register_array_id, new_register_array_name, 
+                                                      register_array_size, register_array_bitwidth));
+
+      return new_register_array_name;
+}
 
 void
 P4Objects::prepare_flex_hdr_parser(Json::Value &cfg_root) {
@@ -3155,6 +3246,37 @@ P4Objects::build_flex_json_value(int id,
   return v;
 }
 
+const Json::Value 
+P4Objects::build_register_array_json_value(int id,
+                                          const std::string &name,
+                                          const std::string &register_array_size,
+                                          const std::string &register_array_bitwidth) {
+  static const char s[] =
+      "{"
+      "  \"name\" : \"%s\","
+      "  \"id\" : %d,"
+      "  \"source_info\" : {"
+      "    \"filename\" : \"newly_added_register_array\","
+      "    \"line\" : 1,"
+      "    \"column\" : 1,"
+      "    \"source_fragment\" : \"%s\""
+      "  },"
+      "  \"size\" : %s,"
+      "  \"bitwidth\" : %s"
+      "}";
+  char output[2048];
+
+  std::sprintf(output, s, name.c_str(), id, name.c_str(),
+               register_array_size.c_str(), register_array_bitwidth.c_str());
+
+  std::stringstream ss;
+  Json::Value v;
+  ss << output;
+  ss >> v;
+
+  return v;
+}
+
 const std::string
 P4Objects::insert_flex_rt(const std::string &pipeline_name, 
     const std::string &old_next_name,
@@ -3236,6 +3358,56 @@ P4Objects::change_conditional_next_node_rt(const std::string &pipeline_name,
     modify_json_value(pipeline_name+" conditional", src_conditional_name, edge_name, dst_node_name);
   }
 }
+
+void
+P4Objects::change_register_array_size_rt(const std::string& name, 
+                                         const std::string& register_array_size) {
+  RegisterArray* register_array = get_register_array(name);
+  int new_register_array_size = std::stoi(register_array_size);
+  int ori_register_array_size = register_array->size();
+  if (new_register_array_size == ori_register_array_size) {
+    return;
+  } else if (new_register_array_size > ori_register_array_size) {
+    std::vector<Register> registers_new;
+    registers_new.reserve(new_register_array_size);
+    auto lock = register_array->unique_lock();
+    for (int i = 0; i < new_register_array_size; i++) {
+      if (i < ori_register_array_size) {
+        registers_new.push_back(register_array->at(i));
+      } else {
+        registers_new.emplace_back(register_array->get_bitwidth(), register_array);
+      }
+    }
+    register_array->reset_registers_with(registers_new);
+  } else {
+    std::vector<Register> registers_new;
+    registers_new.reserve(new_register_array_size);
+    auto lock = register_array->unique_lock();
+    for (int i = 0; i < new_register_array_size; i++) {
+      registers_new.push_back(register_array->at(i));
+    }
+    register_array->reset_registers_with(registers_new);
+  }
+  modify_json_value("register_array", name, "size", new_register_array_size);
+}
+
+void
+P4Objects::change_register_array_bitwidth_rt(const std::string& name, 
+                                             const std::string& register_array_bitwidth) {
+  RegisterArray* register_array = get_register_array(name);
+  int new_register_array_bitwidth = std::stoi(register_array_bitwidth);
+  {
+    auto lock = register_array->unique_lock();
+    std::vector<Register> registers_new(register_array->begin(), register_array->end());
+    for (Register &register_item : registers_new) {
+      register_item.set_bitwidth(new_register_array_bitwidth);
+    }
+    register_array->reset_registers_with(registers_new);
+  }
+  register_array->set_bitwidth(new_register_array_bitwidth);
+  modify_json_value("register_array", name, "bitwidth", new_register_array_bitwidth);
+}
+
 void
 P4Objects::flex_trigger_rt(bool on) {
   ParserOpSet<Data> *op = (ParserOpSet<Data>*) flex_init_state->get_parser_op(0);
@@ -3269,6 +3441,12 @@ P4Objects::delete_match_table_rt(const std::string &pipeline_name,
   //       This is secondary because actions don't take much resource
   remove_match_action_table(name);
   remove_json_value(pipeline_name+" table", name);
+}
+
+void
+P4Objects::delete_register_array_rt(const std::string& name) {
+  remove_register_array(name);
+  remove_json_value("register_array", name);
 }
 
 void
@@ -3926,6 +4104,11 @@ P4Objects::add_control_node(const std::string &name, ControlFlowNode *node) {
 void
 P4Objects::remove_control_node(const std::string &name) {
   remove_object(&control_nodes_map, "control node", name);
+}
+
+void
+P4Objects::remove_register_array(const std::string& name) {
+  remove_object(&register_arrays, "register_array", name);
 }
 
 ControlFlowNode *

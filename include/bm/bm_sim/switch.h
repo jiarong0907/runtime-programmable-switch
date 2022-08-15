@@ -71,6 +71,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 #include <boost/thread/shared_mutex.hpp>
 
@@ -84,6 +85,7 @@
 #include "queue.h"
 #include "runtime_interface.h"
 #include "target_parser.h"
+#include "logger.h"
 
 namespace bm {
 
@@ -830,10 +832,69 @@ class SwitchWContexts : public DevMgr, public RuntimeInterface {
   mt_runtime_reconfig(cxt_id_t cxt_id,
                       const std::string &json_file,
                       const std::string &plan_file) {
-    return contexts.at(cxt_id).mt_runtime_reconfig(json_file, plan_file,
-                                                   get_lookup_factory(),
-                                                   required_fields,
-						   arith_objects);
+    std::ifstream json_file_stream(json_file, std::ios::in);
+    if (!json_file_stream) {
+      BMLOG_ERROR("JSON input file {} can't be opened", json_file);
+      return static_cast<int>(RuntimeReconfigErrorCode::OPEN_JSON_FILE_FAIL);
+    }
+
+    std::ifstream plan_file_stream(plan_file);
+    if (!plan_file_stream) {
+      BMLOG_ERROR("Open plan file {} failed", plan_file);
+      return static_cast<int>(RuntimeReconfigErrorCode::OPEN_PLAN_FILE_FAIL);
+    }
+
+    int reconfig_return_code = mt_runtime_reconfig_with_stream(0, &json_file_stream, &plan_file_stream);
+
+    if (reconfig_return_code != static_cast<int>(RuntimeReconfigErrorCode::SUCCESS)) {
+      return reconfig_return_code;
+    }
+
+    std::ofstream ofs(json_file+".new", std::ios::out);
+    if (!ofs) {
+      BMLOG_ERROR("Error: cannot open output file: {}", json_file + ".new");
+      return static_cast<int>(RuntimeReconfigErrorCode::OPEN_OUTPUT_FILE_FAIL);
+    }
+
+    contexts.at(cxt_id).print_runtime_cfg(ofs);
+
+    std::cout << "table reconfig successfully" << std::endl;
+    return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
+  }
+
+   // This function aims to:
+  // 1. To be called by mt_runtime_reconfig
+  // 2. To be used in tests for the convenience of getting commands directly
+  int
+  mt_runtime_reconfig_with_stream(cxt_id_t cxt_id,
+                                  std::istream* json_file_stream,
+                                  std::istream* plan_file_stream,
+                                  const std::string& output_json_file = "") {
+    RuntimeReconfigErrorCode reconfig_return_code = contexts.at(cxt_id).mt_runtime_reconfig_with_stream(json_file_stream, 
+                                                                                                        plan_file_stream,
+                                                                                                        get_lookup_factory(),
+                                                                                                        required_fields,
+                                                                                                        arith_objects);
+
+    if (reconfig_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+      return static_cast<int>(reconfig_return_code);
+    }
+
+    if (output_json_file.empty()) {
+      std::cout << "table reconfig successfully" << std::endl;
+      return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
+    }
+
+    std::ofstream ofs(output_json_file+".new", std::ios::out);
+    if (!ofs) {
+      BMLOG_ERROR("Error: cannot open output file: {}", output_json_file + ".new");
+      return static_cast<int>(RuntimeReconfigErrorCode::OPEN_OUTPUT_FILE_FAIL);
+    }
+
+    contexts.at(cxt_id).print_runtime_cfg(ofs);
+
+    std::cout << "table reconfig successfully" << std::endl;
+    return static_cast<int>(RuntimeReconfigErrorCode::SUCCESS);
   }
 
   // ---------- End RuntimeInterface ----------

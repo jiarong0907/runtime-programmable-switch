@@ -91,7 +91,8 @@ bm/bm_sim/stacks.h \
 bm/bm_sim/tables.h \
 bm/bm_sim/target_parser.h \
 bm/bm_sim/transport.h \
-bm/bm_sim/header_unions.h
+bm/bm_sim/header_unions.h \
+bm/bm_sim/runtime_reconfig_error_codes.h
 
 nobase_include_HEADERS += \
 bm/bm_sim/core/primitives.h
