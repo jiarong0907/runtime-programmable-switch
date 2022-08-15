@@ -77,9 +77,9 @@ Context::mt_add_entry(const std::string &table_name,
 }
 
 // helper function for FlexCore
-// It will return 0, if success
-// Otherwise, return 1 if the id is unfound, or return 2 if the prefix is wrong
-int 
+// It will return RuntimeReconfigErrorCode::SUCCESS, if success
+// Otherwise, return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR if the id is unfound, or return RuntimeReconfigErrorCode::PREFIX_ERROR if the prefix is wrong
+RuntimeReconfigErrorCode 
 convert_id_to_name(std::unordered_map<std::string, std::string> &id2newNodeName, 
     std::string *out, std::string *in, int size) {
   for (int i = 0; i < size; i++) {
@@ -93,40 +93,45 @@ convert_id_to_name(std::unordered_map<std::string, std::string> &id2newNodeName,
         || prefix == "flx") {
       if (id2newNodeName.find(in[i]) == id2newNodeName.end()) {
         BMLOG_ERROR("Error: cannot find the id {} from id2newNodeName", in[i]);
-        return 1;
+        return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
       }
       out[i] = id2newNodeName[in[i]];
     } else if (prefix == "old") {
       out[i] = actual_name;
     } else {
       BMLOG_ERROR("Error: prefix {} has no match", prefix);
-      return 2;
+      return RuntimeReconfigErrorCode::PREFIX_ERROR;
     }
   }
 
-  return 0;
+  return RuntimeReconfigErrorCode::SUCCESS;
 }
 
 // helper function for FlexCore
-int
+// It will return RuntimeReconfigErrorCode::SUCCESS if success
+// Otherwise, return RuntimeReconfigErrorCode::DUP_CHECK_ERROR, if the id already exists
+RuntimeReconfigErrorCode
 dup_check(const std::unordered_map<std::string, std::string> &id2newNodeName, 
     const std::string &name) {
   if (id2newNodeName.find(name) != id2newNodeName.end()) {
     BMLOG_ERROR("Error: Duplicated id {} from id2newNodeName", name);
-    return 1;
+    return RuntimeReconfigErrorCode::DUP_CHECK_ERROR;
   }
 
-  return 0;
+  return RuntimeReconfigErrorCode::SUCCESS;
 }
 
-int 
+// helper function for FlexCore
+// It will return RuntimeReconfigErrorCode::SUCCESS if success
+// Otherwise, return RuntimeReconfigErrorCode::INVALID_HASH_FUNCTION_NAME_ERROR if the hash function is unfound
+RuntimeReconfigErrorCode
 hash_function_check(const std::string& name) {
   if (!CalculationsMap::get_instance()->get_copy(name)) {
     BMLOG_ERROR("Error: can't find the hash function by name: {}", name);
-    return 1;
+    return RuntimeReconfigErrorCode::INVALID_HASH_FUNCTION_NAME_ERROR;
   }
 
-  return 0; 
+  return RuntimeReconfigErrorCode::SUCCESS; 
 }
 
 RuntimeReconfigErrorCode
@@ -192,7 +197,7 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
           BMLOG_ERROR("Error: inserted table should only have prefix 'new_', but you enter {}", items[0]);
           return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
-        if (dup_check(id2newNodeName, items[0])) {
+        if (dup_check(id2newNodeName, items[0]) == RuntimeReconfigErrorCode::DUP_CHECK_ERROR) {
           return RuntimeReconfigErrorCode::DUP_CHECK_ERROR;
         }
         id2newNodeName[items[0]] = p4objects_rt->insert_match_table_rt(p4objects_new, pipeline, actual_name, true);
@@ -204,7 +209,7 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
           BMLOG_ERROR("Error: inserted cond should only have prefix 'new_', but you enter {}", items[0]);
           return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
-        if (dup_check(id2newNodeName, items[0])) {
+        if (dup_check(id2newNodeName, items[0]) == RuntimeReconfigErrorCode::DUP_CHECK_ERROR) {
           return RuntimeReconfigErrorCode::DUP_CHECK_ERROR;
         }
         id2newNodeName[items[0]] = p4objects_rt->insert_conditional_rt(p4objects_new, pipeline, actual_name, true);
@@ -216,11 +221,9 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
           BMLOG_ERROR("Error: inserted flex should only have prefix 'flx_', but you enter {}", items[0]);
           return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
-        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items+1, 2);
-        if (convert_id_return_code == 1) {
-          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
-        } else if (convert_id_return_code == 2) {
-          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        RuntimeReconfigErrorCode convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items+1, 2);
+        if (convert_id_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+          return convert_id_return_code;
         }
         id2newNodeName[items[0]] = p4objects_rt->insert_flex_rt(pipeline, vals[0], vals[1]);
       } else if (target == "register_array") {
@@ -231,7 +234,7 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
           BMLOG_ERROR("Error: inserted register_array should only have prefix 'new_', but you enter {}", items[0]);
           return RuntimeReconfigErrorCode::PREFIX_ERROR;
         }
-        if (dup_check(id2newNodeName, items[0])) {
+        if (dup_check(id2newNodeName, items[0]) == RuntimeReconfigErrorCode::DUP_CHECK_ERROR) {
           return RuntimeReconfigErrorCode::DUP_CHECK_ERROR;
         }
         id2newNodeName[items[0]] = p4objects_rt->insert_register_array_rt(actual_name, vals[0], vals[1]);
@@ -242,56 +245,44 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
     } else if (op == "change") {
       if (target == "tabl") {
         ss >> pipeline >> items[0] >> items[2] >> items[1];
-        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 2);
-        if (convert_id_return_code == 1) {
-          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
-        } else if (convert_id_return_code == 2) {
-          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        RuntimeReconfigErrorCode convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 2);
+        if (convert_id_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+          return convert_id_return_code;
         }
         p4objects_rt->change_table_next_node_rt(pipeline, vals[0], items[2], vals[1]);
       } else if (target == "cond") {
         ss >> pipeline >> items[0] >> items[2] >> items[1];
-        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 2);
-        if (convert_id_return_code == 1) {
-          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
-        } else if (convert_id_return_code == 2) {
-          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        RuntimeReconfigErrorCode convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 2);
+        if (convert_id_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+          return convert_id_return_code;
         }
         p4objects_rt->change_conditional_next_node_rt(pipeline, vals[0], items[2], vals[1]);
       } else if (target == "flex") {
         ss >> pipeline >> items[0] >> items[2] >> items[1];
-        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 2);
-        if (convert_id_return_code == 1) {
-          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
-        } else if (convert_id_return_code == 2) {
-          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        RuntimeReconfigErrorCode convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 2);
+        if (convert_id_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+          return convert_id_return_code;
         }
         p4objects_rt->change_conditional_next_node_rt(pipeline, vals[0], items[2], vals[1]);
       } else if (target == "init") {
         ss >> pipeline >> items[0];
-        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
-        if (convert_id_return_code == 1) {
-          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
-        } else if (convert_id_return_code == 2) {
-          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        RuntimeReconfigErrorCode convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
+        if (convert_id_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+          return convert_id_return_code;
         }
         p4objects_rt->change_init_node_rt(pipeline, vals[0]);
       } else if (target == "register_array_size") {
         ss >> items[0] >> items[1];
-        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
-        if (convert_id_return_code == 1) {
-          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
-        } else if (convert_id_return_code == 2) {
-          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        RuntimeReconfigErrorCode convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
+        if (convert_id_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+          return convert_id_return_code;
         }
         p4objects_rt->change_register_array_size_rt(vals[0], items[1]);
       } else if (target == "register_array_bitwidth") {
         ss >> items[0] >> items[1];
-        int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
-        if (convert_id_return_code == 1) {
-          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
-        } else if (convert_id_return_code == 2) {
-          return RuntimeReconfigErrorCode::PREFIX_ERROR;
+        RuntimeReconfigErrorCode convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
+        if (convert_id_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+          return convert_id_return_code;
         }
         p4objects_rt->change_register_array_bitwidth_rt(vals[0], items[1]);
       } else {
@@ -313,11 +304,9 @@ Context::mt_runtime_reconfig_with_stream(std::istream* json_file_stream,
       } else {
         ss >> pipeline >> items[0];
       }
-      int convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
-      if (convert_id_return_code == 1) {
-          return RuntimeReconfigErrorCode::UNFOUND_ID_ERROR;
-      } else if (convert_id_return_code == 2) {
-        return RuntimeReconfigErrorCode::PREFIX_ERROR;
+      RuntimeReconfigErrorCode convert_id_return_code = convert_id_to_name(id2newNodeName, vals, items, 1);
+      if (convert_id_return_code != RuntimeReconfigErrorCode::SUCCESS) {
+        return convert_id_return_code;
       }
 
       if (target == "tabl") {
