@@ -1,0 +1,66 @@
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  check-changes:
+    name: Check whether tests need to be run based on diff
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: antrea-io/has-changes@v1
+      id: check_diff
+      with:
+        args: docs/* *.md
+    outputs:
+      has_changes: ${{ steps.check_diff.outputs.has_changes }}
+
+  test:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.has_changes == 'yes' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+        - cxx: g++
+          cc: gcc
+        - cxx: clang++-8
+          cc: clang-8
+        - cxx: clang++-10
+          cc: clang-10
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: 'recursive'
+    - name: Build test Docker image
+      env:
+        CC: ${{ matrix.cc }}
+        CXX: ${{ matrix.cxx }}
+      run: |
+        docker build -t bm --build-arg IMAGE_TYPE=test --build-arg CC=$CC --build-arg CXX=$CXX --build-arg GCOV=$GCOV .
+    - name: Run tests
+      run: |
+        ci_env=`bash <(curl -s https://codecov.io/env)`
+        docker run --rm $ci_env --env GCOV -w /behavioral-model bm /bin/bash -c "make check -j$(nproc) && ./ci/codecov.sh"
+    - name: Check style
+      run: |
+        ./tools/check_style.sh
+
+  test-no-pi:
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.has_changes == 'yes' }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: 'recursive'
+    - name: Build Dockerfile.noPI image
+      run: docker build -t bm-no-pi --build-arg IMAGE_TYPE=test -f Dockerfile.noPI .
+    - name: Run tests
+      run: docker run --rm -w /behavioral-model bm-no-pi /bin/bash -c "make check -j$(nproc)"

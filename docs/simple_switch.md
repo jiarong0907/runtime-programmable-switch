@@ -17,13 +17,34 @@ fields.
 
 The P4_16 language also now has a Portable Switch Architecture (PSA)
 defined in [its own specification](https://p4.org/specs).  As of
-October 2019, a partial implementation of the PSA architecture has
+January 2022, a partial implementation of the PSA architecture has
 been done, but it is not yet complete.  It will be implemented in a
 separate executable program named `psa_switch`, separate from the
 `simple_switch` program described here.
 
 This document aims at providing P4 programmers with important information
 regarding the simple_switch architecture.
+
+
+## Differences between simple_switch and simple_switch_grpc processes
+
+The simple_switch process was developed first, and supports a
+Thrift-based control API that was custom developed for BMv2, and to
+our knowledge is not supported by other switches, unless they are
+based on simple_switch.
+
+The simple_switch_grpc process was developed based on simple_switch,
+and supports the P4Runtime API, as a server/switch.
+simple_switch_grpc can optionally also support the simple_switch
+Thrift API (see
+[here](https://github.com/p4lang/behavioral-model/tree/main/targets/simple_switch_grpc#enabling-the-thrift-server)).
+Enabling this option might be useful to someone because it supports
+some configuration changes that the P4Runtime API does not, e.g. the
+`set_queue_rate` command (among others).
+
+Thus if you wish to use the P4Runtime API to control the configuration
+of the switch, you must use simple_switch_grpc.
+
 
 ## Standard metadata
 
@@ -48,10 +69,7 @@ Here are the fields:
 
 - `ingress_port` (sm14, v1m) - For new packets, the number of the
   ingress port on which the packet arrived to the device.  Read only.
-- `packet_length` (sm14, v1m) - For new packets from a port, or
-  recirculated packets, the length of the packet in bytes.  For cloned
-  or resubmitted packets, you may need to include this in a list of
-  fields to preserve, otherwise its value will become 0.
+- `packet_length` (sm14, v1m) - The length of the packet in bytes.
 - `egress_spec` (sm14, v1m) - Can be assigned a value in ingress code to
   control which output port a packet will go to.  The P4_14 primitive
   `drop`, and the v1model primitive action `mark_to_drop`, have the side
@@ -82,7 +100,7 @@ Here are the fields:
   none of those, so a normal unicast packet from ingress (`NORMAL`).
   Until such time as similar constants are pre-defined for you, you
   may copy [this
-  list](https://github.com/p4lang/p4c/blob/master/testdata/p4_14_samples/switch_20160512/includes/intrinsic.p4#L62-L68)
+  list](https://github.com/p4lang/p4c/blob/main/testdata/p4_14_samples/switch_20160512/includes/intrinsic.p4#L60-L66)
   of constants into your code.
 - `parser_status` (sm14) or `parser_error` (v1m) - `parser_status` is
   the name in the P4_14 language specification.  It has been renamed
@@ -166,9 +184,9 @@ recommend that you use the following P4_14 code:
 header_type queueing_metadata_t {
     fields {
         enq_timestamp : 48;
-        enq_qdepth : 16;
+        enq_qdepth : 19;
         deq_timedelta : 32;
-        deq_qdepth : 16;
+        deq_qdepth : 19;
         qid : 8;
     }
 }
@@ -225,9 +243,9 @@ version:
 ```
 if (a clone primitive action was called) {
     // This condition will be true if your code called the `clone` or
-    // `clone3` primitive action from a P4_16 program, or the
-    // `clone_ingress_pkt_to_egress` primitive action in a P4_14
-    // program, during ingress processing.
+    // `clone_preserving_field_list` extern function from a P4_16
+    // program, or the `clone_ingress_pkt_to_egress` primitive action
+    // in a P4_14 program, during ingress processing.
 
     Create zero or more clones of the packet.  The cloned packet(s)
     will be enqueued in the packet buffer, destined for the egress
@@ -248,10 +266,11 @@ if (a clone primitive action was called) {
     packet reached this occurrence of ingress processing via a
     recirculate operation, for example.)
 
-    If it was a clone3 (P4_16) or clone_ingress_pkt_to_egress (P4_14)
-    action, also preserve the final ingress values of the metadata
-    fields specified in the field list argument, except assign
-    instance_type a value of PKT_INSTANCE_TYPE_INGRESS_CLONE.
+    If it was a clone_preserving_field_list (P4_16) or
+    clone_ingress_pkt_to_egress (P4_14) action, also preserve the
+    final ingress values of the metadata fields specified in the field
+    list argument.  The value of instance_type will be
+    PKT_INSTANCE_TYPE_INGRESS_CLONE for the cloned packet(s).
 
     Each cloned packet will be processed by your parser code again.
     In many cases this will result in exactly the same headers being
@@ -271,13 +290,16 @@ if (digest to generate) {
     // fall through to code below
 }
 if (resubmit was called) {
-    // This condition will be true if your code called the resubmit
-    // primitive action during ingress processing.
+    // This condition will be true if your code called the
+    // `resubmit_preserving_field_list` extern function from a P4_16
+    // program, or the `resubmit` primitive from a P4_14 program,
+    // during ingress processing.
     Start ingress over again for this packet, with its original
     unmodified packet contents and metadata values.  Preserve the
-    final ingress values of any fields specified in the field list
-    given as an argument to the last resubmit() primitive operation
-    called, except assign instance_type a value of PKT_INSTANCE_TYPE_RESUBMIT.
+    final ingress values of any user-defined metadata fields
+    determined by the field list given as an argument to the last
+    resubmit operation called.  The resubmitted packet will have
+    instance_type equal to PKT_INSTANCE_TYPE_RESUBMIT.
 } else if (mcast_grp != 0) {
     // This condition will be true if your code made an assignment to
     // standard_metadata.mcast_grp during ingress processing.  There
@@ -322,9 +344,9 @@ version:
 ```
 if (a clone primitive action was called) {
     // This condition will be true if your code called the `clone` or
-    // `clone3` primitive action from a P4_16 program, or the
-    // `clone_egress_pkt_to_egress` primitive action in a P4_14
-    // program, during egress processing.
+    // `clone_preserving_field_list` extern function from a P4_16
+    // program, or the `clone_egress_pkt_to_egress` primitive action
+    // in a P4_14 program, during egress processing.
 
     Create zero or more clones of the packet.  The cloned packet(s)
     will be enqueued in the packet buffer, destined for the egress
@@ -344,13 +366,15 @@ if (a clone primitive action was called) {
     egress-to-egress cloned packets, nor will your parser code be
     executed for them.
 
-    If it was a clone3 (P4_16) or clone_egress_pkt_to_egress (P4_14)
-    action, also preserve the final egress values of the metadata
-    fields specified in the field list argument, except assign
-    instance_type a value of PKT_INSTANCE_TYPE_EGRESS_CLONE.  Each
-    cloned packet will have the same standard_metadata fields
-    overwritten that all packets that begin egress processing do,
-    e.g. egress_port, egress_spec, egress_global_timestamp, etc.
+    If it was a clone_preserving_field_list (P4_16) or
+    clone_egress_pkt_to_egress (P4_14) action, also preserve the final
+    egress values of the metadata fields specified in the field list
+    argument.  The value of instance_type will be
+    PKT_INSTANCE_TYPE_EGRESS_CLONE for the cloned packet(s).  Each
+    cloned packet will have the its standard_metadata fields
+    initialized in the same way that all packets that begin egress
+    processing do, e.g. egress_port, egress_spec,
+    egress_global_timestamp, etc.
 
     Each cloned packet will continue processing at the beginning of
     your egress code.
@@ -362,15 +386,17 @@ if (egress_spec == DROP_PORT) {
     // egress processing.
     Drop packet.
 } else if (recirculate was called) {
-    // This condition will be true if your code called the recirculate
-    // primitive action during egress processing.
+    // This condition will be true if your code called the
+    // `recirculate_preserving_field_list` extern function from a
+    // P4_16 program, or the `recirculate` primitive action from a
+    // P4_14 program, during egress processing.
     Start processing the packet over again.  That is, take the packet
     as constructed by the deparser, with any modifications made to the
     packet during both ingress and egress processing, and give that
     packet as input to the parser.  Preserve the final egress values
-    of any fields specified in the field list given as an argument to
-    the last recirculate primitive action called, except assign
-    instance_type a value of PKT_INSTANCE_TYPE_RECIRC.
+    of any fields whose field list id is given as an argument to the
+    last recirculate primitive action called.  The instance_type of
+    the recirculated packet will be PKT_INSTANCE_TYPE_RECIRC.
 } else {
     Send the packet to the port in egress_port.  Since egress_port is
     read only during egress processing, note that its value must have
@@ -399,7 +425,7 @@ implementation.
 
 If a table has more than one `lpm` key field, it is rejected by the `p4c` BMv2
 back end. This could be generalized slightly, as described below, but that
-restriction is in place as of the January 2019 version of `p4c`.
+restriction is in place as of the January 2022 version of `p4c`.
 
 
 ### Range tables
@@ -421,7 +447,7 @@ determine whether a search key matches the entry, but the prefix length does
 _not_ determine the relative priority among multiple matching table
 entries. Only the numeric priority supplied by the control plane software
 determines that. Because of this, it would be reasonable for a `range` table to
-support multiple `lpm` key fields, but as of January 2020 this is not supported.
+support multiple `lpm` key fields, but as of January 2022 this is not supported.
 
 If a range table has entries defined via a `const entries` table property, then
 the relative priority of the entries are highest priority first, to lowest
@@ -607,104 +633,37 @@ control ingress(inout headers_t hdr,
 ```
 
 
-## Restrictions on recirculate, resubmit, and clone operations
+## Notes on recirculate, resubmit, and clone operations
 
-Recirculate, resubmit, and clone operations _that do not preserve
-metadata_, i.e. they have an empty list of fields whose value should
-be preserved, work as expected when using p4c and simple_switch, with
-either P4_14 as the source language, or P4_16 plus the v1model
-architecture.
+This section is up to date as long as you are using a version of p4c
+after this pull request was merged:
 
-Unfortunately, at least some of these operations that attempt to
-preserve metadata _do not work correctly_ -- they still cause the
-packet to be recirculated, resubmitted, or cloned, but they do not
-preserve the desired metadata field values.
++ https://github.com/p4lang/p4c/pull/2902
++ Merged with this commit on 2021-Dec-06:
+  https://github.com/p4lang/p4c/commit/2be448f018e88095a13e8a68e1c7cc1641038cd8
 
-This is a known issue that has been discussed at length by the p4c
-developers and P4 language design work group, and the decision made
-is:
+After those changes, all recirculate, resubmit, and clone operations
+should work correctly, even if they specify user-defined metadata
+fields to be preserved.
 
-* Long term, the P4_16 [Portable Switch
-  Architecture](https://p4.org/specs/) uses a different mechanism for
-  specifying metadata to preserve than the v1model architecture uses,
-  and should work correctly.  As of October 2019 the implementation of
-  PSA is not complete, so this does not help one write working code
-  today.
-* If someone wishes to volunteer to make changes to p4c and/or
-  simple_switch for improving this situation, please contact the P4
-  language design work group and coordinate with them.
-  * The preferred form of help would be to complete the Portable
-    Switch Architecture implementation.
-  * Another possibility would be enhancing the v1model architecture
-    implementation.  Several approaches for doing so that have been
-    discussed are described
-    [here](https://github.com/jafingerhut/p4-guide/blob/master/v1model-special-ops/README-resubmit-examples.md).
+An example use of the `@field_list(index_number)` annotation required
+in order to cause user-defined metadata fields to be preserved with
+one of these operations is given in the
+[`v1model.p4`](https://github.com/p4lang/p4c/blob/main/p4include/v1model.p4)
+include file that is part of `p4c`.  See the documentation of the
+`resubmit_preserving_field_list` extern function.
 
-Note that this issue affects not only P4_16 programs using the v1model
-architecture, but also P4_14 programs compiled using the `p4c`
-compiler, because internally `p4c` translates P4_14 to P4_16 code
-before the part of the compiler that causes the problem to occur.
+Note that the `@field_list` annotation is only supported for
+user-defined metadata fields.  It is not supported for parsed packet
+header fields, nor for standard metadata fields.  If you wish to
+preserve any of these other values, you should copy their values to
+user-defined metadata fields that have the `@field_list` annotation on
+them.
 
-The fundamental issue is that P4_14 has the `field_list` construct,
-which is a restricted kind of _named reference_ to other fields.  When
-these field lists are used in P4_14 for recirculate, resubmit, and
-clone operations that preserve metadata, they direct the target not
-only to read those field values, but also later write them (for the
-packet after recirculating, resubmitting, or cloning).  P4_16 field
-lists using the syntax `{field_1, field_2, ...}` are restricted to
-accessing the current values of the fields at the time the statement
-or expression is executed, but do not represent any kind of reference,
-and by the P4_16 language specification cannot cause the values of
-those fields to change at another part of the program.
-
-
-### Hints on distinguishing when metadata is preserved correctly
-
-Below are some details for anyone trying, by hook or by crook, to make
-preservation of metadata work with the current p4c implementation,
-without the future improvements mentioned above.
-
-There is no known simple rule to determine which invocations of these
-operations will preserve metadata correctly and which will not.  If
-you want at least some indication, examine the BMv2 JSON file produced
-as output from the compiler.
-
-The Python program
-[bmv2-json-check.py](https://github.com/p4pktgen/p4pktgen/blob/master/tools/bmv2-json-check.py)
-attempts to determine whether any field list used to preserve metadata
-fields for recirculate, resubmit, or clone operations looks like it
-has the name of a compiler-generated temporary variable.  Warning: its
-methods are fairly basic, and thus there is no guarantee that if the
-script says there is no problem, metadata preservation will work
-correctly, or conversely that if the script says there are suspicious
-things found, metadata preservation will not work correctly.  It
-automates what is described below.
-
-Every recirculate, resubmit, and clone operation is represented in
-JSON data inside the BMv2 JSON file.  Search for one of these strings,
-_with_ the double quote marks around them:
-
-* `"recirculate"` - only parameter is a field_list id
-* `"resubmit"` - only parameter is a field_list id
-* `"clone_ingress_pkt_to_egress"` - second parameter is a field_list id
-* `"clone_egress_pkt_to_egress"` - second parameter is a field_list id
-
-You can find the fields in each field list in the section of the BMv2
-JSON file with the key `"field_lists"`.  Whatever the field names are
-there, simple_switch _will preserve the values of fields with those
-names_.  The primary issue is whether those fields correspond to the
-same storage locations that the compiler uses to represent the fields
-you want to preserve.
-
-In some cases they are, which is often the case if the field names in
-the BMv2 JSON file look the same as, or similar to, the field names in
-your P4 source code.
-
-In some cases they represent different storage locations,
-e.g. compiler-generated temporary variables used to hold a copy of the
-field you want to preserve.  A field name beginning with `tmp.` is a
-hint of this as of p4c 2019-Oct, but this is a p4c implementation
-detail that could change.
+Also note that there may be implementation-specific oddities in `p4c`
+if you preserve user-defined metadata fields that are inside of
+structs or headers that are nested one or more levels deep within the
+user-defined metadata struct.
 
 
 ## P4_16 plus v1model architecture notes
@@ -839,7 +798,7 @@ This is supported:
     }
 ```
 
-but this is not, as of 2019-Jul-01:
+but this is not, as of 2022-Jan-18:
 
 ```
     action foo() {
@@ -957,8 +916,8 @@ for array elements for packet processing, the Thrift API (used by
 `simple_switch_CLI`, and perhaps some switch controller software) only
 supports control plane read and write operations for array elements up
 to 64 bits wide (see the type `BmRegisterValue` in file
-[`standard.thrift`](https://github.com/p4lang/behavioral-model/blob/master/thrift_src/standard.thrift),
-which is a 64-bit integer as of October 2019).  The P4Runtime API does
+[`standard.thrift`](https://github.com/p4lang/behavioral-model/blob/main/thrift_src/standard.thrift),
+which is a 64-bit integer as of January 2022).  The P4Runtime API does
 not have this limitation, but there is no P4Runtime implementation of
 register read and write operations yet for simple_switch:
 [p4lang/PI#376](https://github.com/p4lang/PI/issues/376)
@@ -971,7 +930,7 @@ accesses some of the same register objects.  You need not use the
 `@atomic` annotation in your P4_16 program in order for this level of
 atomicity to be guaranteed for you.
 
-BMv2 v1model as of October 2019 _ignores_ `@atomic` annotations in
+BMv2 v1model as of January 2022 _ignores_ `@atomic` annotations in
 your P4_16 programs.  Thus even if you use such annotations, this does
 not cause BMv2 to treat any block of code larger than one action call
 as an atomic transaction.
@@ -1036,7 +995,7 @@ result parameter where the result is written.
 
 ### BMv2 timestamp implementation notes
 
-All timestamps in BMv2 as of 2020-Jun-14 are in units of
+All timestamps in BMv2 as of 2022-Jan-18 are in units of
 microseconds, and they all begin at 0 when the process begins,
 e.g. when `simple_switch` or `simple_switch_grpc` begins.
 
@@ -1091,3 +1050,157 @@ options:
   This is likely to be at least as much development effort as
   implementing PTP, but seems likely to be able to achieve tighter
   time synchronization.
+
+
+### BMv2 idle timeout implementation notes
+
+The BMv2 v1model implementation supports the table property
+`support_timeout`.  If not specified for a table, its value is false.
+If you assign this table property the value of true when defining a
+table, as shown in the table definition below, then BMv2 will maintain
+independent state for each entry of the table to detect when it has
+been longer than a configured time interval since the entry was last
+matched.
+
+```
+    // Definitions of actions have been omitted in this code snippet.
+    // Their definitions do not affect the behavior of the
+    // `support_timeout` table property.
+
+    table mac_da_fwd {
+        key = {
+            hdr.ethernet.dstAddr: exact;
+        }
+        actions = {
+            set_port;
+            my_drop;
+        }
+        support_timeout = true;
+        default_action = my_drop;
+    }
+```
+
+See Sections
+["Idle-timeout"](https://p4.org/p4-spec/p4runtime/v1.3.0/P4Runtime-Spec.html#sec-idle-timeout)
+and ["Table Idle Timeout
+Notification"](https://p4.org/p4-spec/p4runtime/v1.3.0/P4Runtime-Spec.html#sec-table-idle-timeout-notification)
+in the P4Runtime Specification for how a controller can configure the
+time interval for each entry it adds to such a table, and the contents
+of IdleTimeoutNotification messages sent from the switch to a
+P4Runtime controller when a table entry has not been matched for
+longer than its configured `idle_timeout_ns` duration.
+
+The BMv2 v1model implementation of this feature does a "background
+sweep" of all entries in all tables with `support_timeout = true`
+every 1 second, so effectively idle timeout configurations are rounded
+up to the next multiple of 1 second.
+
+If a table entry has not been matched for long enough, and thus BMv2
+has sent an IdleTimeoutNotification message to the controller for that
+entry, and the entry continues not to be matched after that, BMv2 will
+attempt to send another IdleTimeoutNotification for the same entry
+every 2 seconds afterwards (every other sweep interval), regardless of
+the `idle_timeout_ns` configured for the entry.
+
+
+## Restrictions on recirculate, resubmit, and clone operations
+
+Note: This section is for historical reference purposes.  It applies
+for versions of p4c before this pull request was merged:
+
++ https://github.com/p4lang/p4c/pull/2902
++ Merged with this commit on 2021-Dec-06:
+  https://github.com/p4lang/p4c/commit/2be448f018e88095a13e8a68e1c7cc1641038cd8
+
+Recirculate, resubmit, and clone operations _that do not preserve
+metadata_, i.e. they have an empty list of fields whose value should
+be preserved, work as expected when using p4c and simple_switch, with
+either P4_14 as the source language, or P4_16 plus the v1model
+architecture.
+
+Unfortunately, at least some of these operations that attempt to
+preserve metadata _do not work correctly_ -- they still cause the
+packet to be recirculated, resubmitted, or cloned, but they do not
+preserve the desired metadata field values.
+
+This is a known issue that has been discussed at length by the p4c
+developers and P4 language design work group, and the decision made
+is:
+
+* Long term, the P4_16 [Portable Switch
+  Architecture](https://p4.org/specs/) uses a different mechanism for
+  specifying metadata to preserve than the v1model architecture uses,
+  and should work correctly.  As of October 2019 the implementation of
+  PSA is not complete, so this does not help one write working code
+  today.
+* If someone wishes to volunteer to make changes to p4c and/or
+  simple_switch for improving this situation, please contact the P4
+  language design work group and coordinate with them.
+  * The preferred form of help would be to complete the Portable
+    Switch Architecture implementation.
+
+Note that this issue affects not only P4_16 programs using the v1model
+architecture, but also P4_14 programs compiled using the `p4c`
+compiler, because internally `p4c` translates P4_14 to P4_16 code
+before the part of the compiler that causes the problem to occur.
+
+The fundamental issue is that P4_14 has the `field_list` construct,
+which is a restricted kind of _named reference_ to other fields.  When
+these field lists are used in P4_14 for recirculate, resubmit, and
+clone operations that preserve metadata, they direct the target not
+only to read those field values, but also later write them (for the
+packet after recirculating, resubmitting, or cloning).  P4_16 field
+lists using the syntax `{field_1, field_2, ...}` are restricted to
+accessing the current values of the fields at the time the statement
+or expression is executed, but do not represent any kind of reference,
+and by the P4_16 language specification cannot cause the values of
+those fields to change at another part of the program.
+
+
+### Hints on distinguishing when metadata is preserved correctly
+
+Below are some details for anyone trying, by hook or by crook, to make
+preservation of metadata work with the current p4c implementation,
+without the future improvements mentioned above.
+
+There is no known simple rule to determine which invocations of these
+operations will preserve metadata correctly and which will not.  If
+you want at least some indication, examine the BMv2 JSON file produced
+as output from the compiler.
+
+The Python program
+[bmv2-json-check.py](https://github.com/p4pktgen/p4pktgen/blob/master/tools/bmv2-json-check.py)
+attempts to determine whether any field list used to preserve metadata
+fields for recirculate, resubmit, or clone operations looks like it
+has the name of a compiler-generated temporary variable.  Warning: its
+methods are fairly basic, and thus there is no guarantee that if the
+script says there is no problem, metadata preservation will work
+correctly, or conversely that if the script says there are suspicious
+things found, metadata preservation will not work correctly.  It
+automates what is described below.
+
+Every recirculate, resubmit, and clone operation is represented in
+JSON data inside the BMv2 JSON file.  Search for one of these strings,
+_with_ the double quote marks around them:
+
+* `"recirculate"` - only parameter is a field_list id
+* `"resubmit"` - only parameter is a field_list id
+* `"clone_ingress_pkt_to_egress"` - second parameter is a field_list id
+* `"clone_egress_pkt_to_egress"` - second parameter is a field_list id
+
+You can find the fields in each field list in the section of the BMv2
+JSON file with the key `"field_lists"`.  Whatever the field names are
+there, simple_switch _will preserve the values of fields with those
+names_.  The primary issue is whether those fields correspond to the
+same storage locations that the compiler uses to represent the fields
+you want to preserve.
+
+In some cases they are, which is often the case if the field names in
+the BMv2 JSON file look the same as, or similar to, the field names in
+your P4 source code.
+
+In some cases they represent different storage locations,
+e.g. compiler-generated temporary variables used to hold a copy of the
+field you want to preserve.  A field name beginning with `tmp.` is a
+hint of this as of p4c 2019-Oct up through 2021-Dec-05, but this is a
+p4c implementation detail that could change.

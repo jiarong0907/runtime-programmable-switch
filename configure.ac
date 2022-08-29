@@ -46,7 +46,7 @@ AC_ARG_WITH([pdfixed],
 AM_CONDITIONAL([COND_PDFIXED], [test "$want_pdfixed" = yes])
 
 AC_ARG_WITH([nanomsg],
-    AS_HELP_STRING([--with-nanomsg], [Build Nanomsg RPC service, if disabled then you must have some other way of controlling the switch]),
+    AS_HELP_STRING([--with-nanomsg], [Support generating Nanomsg events]),
     [want_nanomsg="$withval"], [want_nanomsg=yes])
 
 AM_CONDITIONAL([COND_NANOMSG], [test "$want_nanomsg" = yes])
@@ -192,9 +192,8 @@ AS_IF([test "$want_nanomsg" = yes], [
     AC_DEFINE([NANOMSG_ON], [], [Enable Nanomsg support])
 ])
 
-# Check for pthread, libjudy, libgmp, libpcap
+# Check for pthread, libgmp, libpcap
 AX_PTHREAD([], [AC_MSG_ERROR([Missing pthread library])])
-AC_CHECK_LIB([Judy], [Judy1Next], [], [AC_MSG_ERROR([Missing libJudy])])
 AC_CHECK_LIB([gmp], [__gmpz_init], [], [AC_MSG_ERROR([Missing libgmp])])
 AC_CHECK_LIB([pcap], [pcap_create], [], [AC_MSG_ERROR([Missing libpcap])])
 AC_CHECK_LIB([pcap], [pcap_set_immediate_mode], [pcap_fix=yes], [pcap_fix=no])
@@ -263,6 +262,7 @@ AC_CHECK_HEADER([boost/multiprecision/gmp.hpp], [], [AC_MSG_ERROR([Missing boost
 AC_CHECK_HEADER([boost/program_options.hpp], [], [AC_MSG_ERROR([Missing boost program options header])])
 AC_CHECK_HEADER([boost/functional/hash.hpp], [], [AC_MSG_ERROR([Missing boost functional hash header])])
 AC_CHECK_HEADER([boost/filesystem.hpp], [], [AC_MSG_ERROR([Missing boost filesystem header])])
+AC_CHECK_HEADER([boost/container/flat_set.hpp], [], [AC_MSG_ERROR([Boost flat_set header not found])])
 
 AC_SUBST([AM_CPPFLAGS], ["-I\$(top_srcdir)/include \
                           -I\$(top_builddir)/include \
@@ -282,6 +282,33 @@ AC_TYPE_SIZE_T
 AC_TYPE_UINT64_T
 AC_LANG_POP(C++)
 
+AS_IF([test "$want_pi" = yes], [
+	AC_PATH_PROG([PROTOC], [protoc], [])
+	AS_IF([test "x$PROTOC" = x], [AC_MSG_ERROR([protoc not found])])
+
+	PKG_CHECK_MODULES([PROTOBUF], [protobuf >= 3.0.0])
+	AC_SUBST([PROTOBUF_CFLAGS])
+	AC_SUBST([PROTOBUF_LIBS])
+
+	PKG_CHECK_MODULES([GRPC], [grpc++ >= 1.3.0 grpc >= 3.0.0])
+	AC_SUBST([GRPC_CFLAGS])
+	AC_SUBST([GRPC_LIBS])
+
+	AC_PATH_PROG([GRPC_CPP_PLUGIN], [grpc_cpp_plugin])
+	AS_IF([test "x$GRPC_CPP_PLUGIN" = x], [
+		AC_MSG_ERROR([grpc_cpp_plugin not found])
+	])
+
+	AS_IF([test "$PYTHON" != :], [
+		AC_PATH_PROG([GRPC_PY_PLUGIN], [grpc_python_plugin])
+		AS_IF([test "x$GRPC_PY_PLUGIN" = x], [
+			AC_MSG_WARN([grpc_python_plugin not found, Python code won't be generated])
+		])
+	])
+])
+
+AM_CONDITIONAL([HAVE_GRPC_PY_PLUGIN], [test "x$GRPC_PY_PLUGIN" != x])
+
 # Generate makefiles
 AC_CONFIG_FILES([Makefile
 		thrift_src/Makefile
@@ -289,14 +316,15 @@ AC_CONFIG_FILES([Makefile
 		third_party/gtest/Makefile
 		third_party/jsoncpp/Makefile
 		third_party/spdlog/Makefile
-                include/Makefile
-                src/Makefile
-                src/bf_lpm_trie/Makefile
+		include/Makefile
+		src/Makefile
+		src/bf_lpm_trie/Makefile
 		src/bm_sim/Makefile
 		src/bm_runtime/Makefile
 		src/BMI/Makefile
 		src/bm_apps/Makefile
 		src/bm_apps/examples/Makefile
+		services/Makefile
 		targets/Makefile
 		targets/simple_router/Makefile
 		targets/l2_switch/Makefile
@@ -308,10 +336,14 @@ AC_CONFIG_FILES([Makefile
 		targets/psa_switch/tests/Makefile
 		tests/Makefile
 		tests/stress_tests/Makefile
-                tools/Makefile
-                pdfixed/Makefile
-                pdfixed/include/Makefile
-                PI/Makefile])
+		tools/Makefile
+		pdfixed/Makefile
+		pdfixed/include/Makefile
+		PI/Makefile])
+
+AS_IF([test "$want_pi" = yes], [
+	AC_CONFIG_SUBDIRS([targets/simple_switch_grpc])
+])
 
 # Generate other files
 AC_CONFIG_FILES([tests/utils.cpp

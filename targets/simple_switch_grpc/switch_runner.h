@@ -42,9 +42,17 @@ class SysrepoDriver;
 
 class DataplaneInterfaceServiceImpl;
 
+struct SSLOptions {
+  std::string pem_root_certs;
+  std::string pem_private_key;
+  std::string pem_cert_chain;
+  bool with_client_auth;
+};
+
 class SimpleSwitchGrpcRunner {
  public:
   static constexpr bm::DevMgrIface::port_t default_drop_port = 511;
+  static constexpr size_t default_nb_queues_per_port = 1;
 
   // there is no real need for a singleton here, except for the fact that we use
   // PIGrpcServerRunAddr, ... which uses static state
@@ -53,10 +61,12 @@ class SimpleSwitchGrpcRunner {
       std::string grpc_server_addr = "0.0.0.0:9559",
       bm::DevMgrIface::port_t cpu_port = 0,
       std::string dp_grpc_server_addr = "",
-      bm::DevMgrIface::port_t drop_port = default_drop_port) {
+      bm::DevMgrIface::port_t drop_port = default_drop_port,
+      std::shared_ptr<SSLOptions> ssl_options = nullptr,
+      size_t nb_queues_per_port = default_nb_queues_per_port) {
     static SimpleSwitchGrpcRunner instance(
         enable_swap, grpc_server_addr, cpu_port, dp_grpc_server_addr,
-        drop_port);
+        drop_port, ssl_options, nb_queues_per_port);
     return instance;
   }
 
@@ -74,7 +84,10 @@ class SimpleSwitchGrpcRunner {
                          std::string grpc_server_addr = "0.0.0.0:9559",
                          bm::DevMgrIface::port_t cpu_port = 0,
                          std::string dp_grpc_server_addr = "",
-                         bm::DevMgrIface::port_t drop_port = default_drop_port);
+                         bm::DevMgrIface::port_t drop_port = default_drop_port,
+                         std::shared_ptr<SSLOptions> ssl_options = nullptr,
+                         size_t nb_queues_per_port =
+                             default_nb_queues_per_port);
   ~SimpleSwitchGrpcRunner();
 
   void port_status_cb(bm::DevMgrIface::port_t port,
@@ -90,6 +103,7 @@ class SimpleSwitchGrpcRunner {
 #ifdef WITH_SYSREPO
   std::unique_ptr<SysrepoDriver> sysrepo_driver;
 #endif  // WITH_SYSREPO
+  std::shared_ptr<SSLOptions> ssl_options;
 };
 
 }  // namespace sswitch_grpc

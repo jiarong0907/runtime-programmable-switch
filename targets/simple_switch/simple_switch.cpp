@@ -1,4 +1,5 @@
 /* Copyright 2013-present Barefoot Networks, Inc.
+ * Copyright 2021 VMware, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +15,7 @@
  */
 
 /*
- * Antonin Bas (antonin@barefootnetworks.com)
+ * Antonin Bas
  *
  */
 
@@ -115,7 +116,7 @@ class SimpleSwitch::MirroringSessions {
 };
 
 // Arbitrates which packets are processed by the ingress thread. Resubmit and
-// recirculate packets go to a high priority queue, while normal pakcets go to a
+// recirculate packets go to a high priority queue, while normal packets go to a
 // low priority queue. We assume that starvation is not going to be a problem.
 // Resubmit packets are dropped if the queue is full in order to make sure the
 // ingress thread cannot deadlock. We do the same for recirculate packets even
@@ -197,19 +198,16 @@ class SimpleSwitch::InputBuffer {
   QueueImpl queue_lo;
 };
 
-SimpleSwitch::SimpleSwitch(bool enable_swap, port_t drop_port)
+SimpleSwitch::SimpleSwitch(bool enable_swap, port_t drop_port,
+                           size_t nb_queues_per_port)
   : Switch(enable_swap),
     drop_port(drop_port),
     input_buffer(new InputBuffer(
         1024 /* normal capacity */, 1024 /* resubmit/recirc capacity */)),
-#ifdef SSWITCH_PRIORITY_QUEUEING_ON
+    nb_queues_per_port(nb_queues_per_port),
     egress_buffers(nb_egress_threads,
                    64, EgressThreadMapper(nb_egress_threads),
-                   SSWITCH_PRIORITY_QUEUEING_NB_QUEUES),
-#else
-    egress_buffers(nb_egress_threads,
-                   64, EgressThreadMapper(nb_egress_threads)),
-#endif
+                   nb_queues_per_port),
     output_buffer(128),
     // cannot use std::bind because of a clang bug
     // https://stackoverflow.com/questions/32030141/is-this-incorrect-use-of-stdbind-or-a-compiler-bug
@@ -298,11 +296,7 @@ SimpleSwitch::~SimpleSwitch() {
     // guarantee that the sentinel was enqueued otherwise. It should not be an
     // issue because at this stage the ingress thread has been sent a signal to
     // stop, and only egress clones can be sent to the buffer.
-#ifdef SSWITCH_PRIORITY_QUEUEING_ON
     while (egress_buffers.push_front(i, 0, nullptr) == 0) continue;
-#else
-    while (egress_buffers.push_front(i, nullptr) == 0) continue;
-#endif
   }
   output_buffer.push_front(nullptr);
   for (auto& thread_ : threads_) {
@@ -334,6 +328,13 @@ SimpleSwitch::mirroring_get_session(mirror_id_t mirror_id,
 }
 
 int
+SimpleSwitch::set_egress_priority_queue_depth(size_t port, size_t priority,
+                                              const size_t depth_pkts) {
+  egress_buffers.set_capacity(port, priority, depth_pkts);
+  return 0;
+}
+
+int
 SimpleSwitch::set_egress_queue_depth(size_t port, const size_t depth_pkts) {
   egress_buffers.set_capacity(port, depth_pkts);
   return 0;
@@ -342,6 +343,13 @@ SimpleSwitch::set_egress_queue_depth(size_t port, const size_t depth_pkts) {
 int
 SimpleSwitch::set_all_egress_queue_depths(const size_t depth_pkts) {
   egress_buffers.set_capacity_for_all(depth_pkts);
+  return 0;
+}
+
+int
+SimpleSwitch::set_egress_priority_queue_rate(size_t port, size_t priority,
+                                             const uint64_t rate_pps) {
+  egress_buffers.set_rate(port, priority, rate_pps);
   return 0;
 }
 
@@ -404,19 +412,15 @@ SimpleSwitch::enqueue(port_t egress_port, std::unique_ptr<Packet> &&packet) {
           .set(egress_buffers.size(egress_port));
     }
 
-#ifdef SSWITCH_PRIORITY_QUEUEING_ON
     size_t priority = phv->has_field(SSWITCH_PRIORITY_QUEUEING_SRC) ?
         phv->get_field(SSWITCH_PRIORITY_QUEUEING_SRC).get<size_t>() : 0u;
-    if (priority >= SSWITCH_PRIORITY_QUEUEING_NB_QUEUES) {
+    if (priority >= nb_queues_per_port) {
       bm::Logger::get()->error("Priority out of range, dropping packet");
       return;
     }
     egress_buffers.push_front(
-        egress_port, SSWITCH_PRIORITY_QUEUEING_NB_QUEUES - 1 - priority,
+        egress_port, nb_queues_per_port - 1 - priority,
         std::move(packet));
-#else
-    egress_buffers.push_front(egress_port, std::move(packet));
-#endif
 }
 
 // used for ingress cloning, resubmit
@@ -591,10 +595,15 @@ SimpleSwitch::ingress_thread() {
       // TODO(antonin): a copy is not needed here, but I don't yet have an
       // optimized way of doing this
       std::unique_ptr<Packet> packet_copy = packet->clone_no_phv_ptr();
+      PHV *phv_copy = packet_copy->get_phv();
       copy_field_list_and_set_type(packet, packet_copy,
                                    PKT_INSTANCE_TYPE_RESUBMIT,
                                    field_list_id);
       RegisterAccess::clear_all(packet_copy.get());
+      packet_copy->set_register(RegisterAccess::PACKET_LENGTH_REG_IDX,
+                                ingress_packet_size);
+      phv_copy->get_field("standard_metadata.packet_length")
+          .set(ingress_packet_size);
       input_buffer->push_front(
           InputBuffer::PacketType::RESUBMIT, std::move(packet_copy));
       continue;
@@ -631,12 +640,8 @@ SimpleSwitch::egress_thread(size_t worker_id) {
   while (1) {
     std::unique_ptr<Packet> packet;
     size_t port;
-#ifdef SSWITCH_PRIORITY_QUEUEING_ON
     size_t priority;
     egress_buffers.pop_back(worker_id, &port, &priority, &packet);
-#else
-    egress_buffers.pop_back(worker_id, &port, &packet);
-#endif
     if (packet == nullptr) break;
 
     Deparser *deparser = this->get_deparser("deparser");
@@ -658,11 +663,7 @@ SimpleSwitch::egress_thread(size_t worker_id) {
           egress_buffers.size(port));
       if (phv->has_field("queueing_metadata.qid")) {
         auto &qid_f = phv->get_field("queueing_metadata.qid");
-#ifdef SSWITCH_PRIORITY_QUEUEING_ON
-        qid_f.set(SSWITCH_PRIORITY_QUEUEING_NB_QUEUES - 1 - priority);
-#else
-        qid_f.set(0);
-#endif
+        qid_f.set(nb_queues_per_port - 1 - priority);
       }
     }
 
@@ -700,6 +701,11 @@ SimpleSwitch::egress_thread(size_t worker_id) {
         field_list->copy_fields_between_phvs(phv_copy, phv);
         phv_copy->get_field("standard_metadata.instance_type")
             .set(PKT_INSTANCE_TYPE_EGRESS_CLONE);
+        auto packet_size =
+            packet->get_register(RegisterAccess::PACKET_LENGTH_REG_IDX);
+        RegisterAccess::clear_all(packet_copy.get());
+        packet_copy->set_register(RegisterAccess::PACKET_LENGTH_REG_IDX,
+                                  packet_size);
         if (config.mgid_valid) {
           BMLOG_DEBUG_PKT(*packet, "Cloning packet to MGID {}", config.mgid);
           multicast(packet_copy.get(), config.mgid);
@@ -707,7 +713,6 @@ SimpleSwitch::egress_thread(size_t worker_id) {
         if (config.egress_port_valid) {
           BMLOG_DEBUG_PKT(*packet, "Cloning packet to egress port {}",
                           config.egress_port);
-          RegisterAccess::clear_all(packet_copy.get());
           enqueue(config.egress_port, std::move(packet_copy));
         }
       }

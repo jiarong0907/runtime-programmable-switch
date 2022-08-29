@@ -1,4 +1,5 @@
 /* Copyright 2013-present Barefoot Networks, Inc.
+ * Copyright 2022 VMware, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +15,7 @@
  */
 
 /*
- * Antonin Bas (antonin@barefootnetworks.com)
+ * Antonin Bas
  *
  */
 
@@ -498,12 +499,16 @@ SimpleSwitchGrpcRunner::SimpleSwitchGrpcRunner(
     std::string grpc_server_addr,
     bm::DevMgrIface::port_t cpu_port,
     std::string dp_grpc_server_addr,
-    bm::DevMgrIface::port_t drop_port)
-    : simple_switch(new SimpleSwitch(enable_swap, drop_port)),
+    bm::DevMgrIface::port_t drop_port,
+    std::shared_ptr<SSLOptions> ssl_options,
+    size_t nb_queues_per_port)
+    : simple_switch(new SimpleSwitch(enable_swap, drop_port,
+                                     nb_queues_per_port)),
       grpc_server_addr(grpc_server_addr), cpu_port(cpu_port),
       dp_grpc_server_addr(dp_grpc_server_addr),
       dp_service(nullptr),
-      dp_grpc_server(nullptr) {
+      dp_grpc_server(nullptr),
+      ssl_options(ssl_options) {
   PIGrpcServerInit();
 }
 
@@ -623,7 +628,22 @@ SimpleSwitchGrpcRunner::init_and_start(const bm::OptionsParser &parser) {
     };
     LoggerConfig::set_writer(std::make_shared<P4RuntimeLogger>());
   }
-  PIGrpcServerRunAddr(grpc_server_addr.c_str());
+  PIGrpcServerSSLOptions_t pi_ssl_options;
+  if (ssl_options != nullptr) {
+    pi_ssl_options.pem_root_certs = ssl_options->pem_root_certs.c_str();
+    pi_ssl_options.pem_private_key = ssl_options->pem_private_key.c_str();
+    pi_ssl_options.pem_cert_chain = ssl_options->pem_cert_chain.c_str();
+    if (ssl_options->with_client_auth) {
+      pi_ssl_options.client_auth =
+          PI_GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
+    } else {
+      pi_ssl_options.client_auth =
+          PI_GRPC_SSL_DONT_REQUEST_CLIENT_CERTIFICATE;
+    }
+  }
+  PIGrpcServerRunV2(grpc_server_addr.c_str(),
+                    nullptr,
+                    (ssl_options != nullptr) ? &pi_ssl_options : nullptr);
 
 #ifdef WITH_SYSREPO
   if (!sysrepo_driver->start()) return 1;
