@@ -31,7 +31,7 @@ This is a runtime programmable software switch implemented based on the BMv2 mod
 
 ## Setup
 
-**Recommended:** You can skip the complicated setup by using our pre-configured VM image ([download](https://drive.google.com/file/d/1eqOxmJthd4h_TK8V9VHYGSFerzjjnTKz/view?usp=sharing)). 
+**Recommended:** You can skip the complicated setup by using our pre-configured VM image ([download](https://drive.google.com/file/d/1umMzK2CWWf4EiwDaInYPz7kDs7vmWdf9/view?usp=share_link)). 
 
 The following is the steps to setup the environment from scratch:
 1. Download VM image of mininet-2.3.0-210211-ubuntu-18.04.5-server-amd64-ovf.zip from https://github.com/mininet/mininet/releases/
