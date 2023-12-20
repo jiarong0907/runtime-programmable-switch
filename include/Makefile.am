@@ -43,6 +43,7 @@ bm/bm_sim/debugger.h \
 bm/bm_sim/deparser.h \
 bm/bm_sim/dev_mgr.h \
 bm/bm_sim/device_id.h \
+bm/bm_sim/dynamic_bitset.h \
 bm/bm_sim/entries.h \
 bm/bm_sim/enums.h \
 bm/bm_sim/event_logger.h \
@@ -96,3 +97,6 @@ bm/bm_sim/runtime_reconfig_error_codes.h
 
 nobase_include_HEADERS += \
 bm/bm_sim/core/primitives.h
+
+nobase_include_HEADERS += \
+bm/bm_grpc/pem.h

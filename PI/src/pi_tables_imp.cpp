@@ -648,7 +648,7 @@ bm::MatchTableAbstract::EntryCommon get_match_entry(
           0, t_name, handle, &entry);
       if (error_code != bm::MatchErrorCode::SUCCESS)
         throw bm_exception(error_code);
-      return entry;
+      return std::move(entry);  // avoid copy
     }
     case bm::MatchTableType::INDIRECT: {
       bm::MatchTableIndirect::Entry entry;
@@ -656,7 +656,7 @@ bm::MatchTableAbstract::EntryCommon get_match_entry(
           0, t_name, handle, &entry);
       if (error_code != bm::MatchErrorCode::SUCCESS)
         throw bm_exception(error_code);
-      return entry;
+      return std::move(entry);  // avoid copy
     }
     case bm::MatchTableType::INDIRECT_WS: {
       bm::MatchTableIndirectWS::Entry entry;
@@ -664,7 +664,7 @@ bm::MatchTableAbstract::EntryCommon get_match_entry(
           0, t_name, handle, &entry);
       if (error_code != bm::MatchErrorCode::SUCCESS)
         throw bm_exception(error_code);
-      return entry;
+      return std::move(entry);  // avoid copy
     }
   }
   return {};
@@ -696,8 +696,13 @@ void set_direct_resources(const pi_p4info_t *p4info, pi_dev_id_t dev_id,
         {
           auto rates = pibmv2::convert_from_meter_spec(
               reinterpret_cast<pi_meter_spec_t *>(config->config));
-          error_code = pibmv2::switch_->mt_set_meter_rates(
-              0, t_name, entry_handle, rates);
+          if (rates.empty()) {  // is this a P4Runtime "reset" operation?
+            error_code = pibmv2::switch_->mt_reset_meter_rates(
+                0, t_name, entry_handle);
+          } else {
+            error_code = pibmv2::switch_->mt_set_meter_rates(
+                0, t_name, entry_handle, rates);
+          }
         }
         break;
       default:  // TODO(antonin): what to do?

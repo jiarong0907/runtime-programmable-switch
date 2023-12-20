@@ -3,12 +3,15 @@ ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 # Ensures that gtest has been built
 SUBDIRS = ../../../third_party
 
+# for deprecated Protobuf fields
+AM_CXXFLAGS += -Wno-error=deprecated-declarations
+
 AM_CPPFLAGS += \
 -isystem $(top_srcdir)/../../third_party/gtest/include \
 -I$(top_srcdir) \
 -I$(top_srcdir)/../../include \
 -isystem$(top_srcdir)/../../third_party/spdlog \
--I$(top_builddir)/cpp_out -I$(top_builddir)/grpc_out \
+-I$(top_builddir)/../../services/cpp_out -I$(top_builddir)/../../services/grpc_out \
 -DTESTDATADIR=\"$(abs_srcdir)/testdata\"
 
 if WITH_SYSREPO
@@ -31,6 +34,7 @@ check_PROGRAMS = example test_gtest
 common_source = utils.h utils.cpp base_test.h base_test.cpp
 
 example_SOURCES = example.cpp utils.h utils.cpp
+
 test_gtest_SOURCES = \
 $(common_source) main.cpp \
 test_basic.cpp test_grpc_dp.cpp test_packet_io.cpp \
@@ -45,7 +49,11 @@ if WITH_SYSREPO
 test_gtest_SOURCES += test_gnmi.cpp
 endif
 
-LDADD = \
+example_LDADD = \
+-lpiprotogrpc -lpiprotobuf \
+$(PROTOBUF_LIBS) $(GRPC_LIBS)
+
+test_gtest_LDADD = \
 $(top_builddir)/libsimple_switch_grpc.la \
 $(top_builddir)/../simple_switch/libsimpleswitch.la \
 -lpiprotogrpc -lpiprotobuf \

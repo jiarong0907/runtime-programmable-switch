@@ -1,4 +1,5 @@
 /* Copyright 2013-present Barefoot Networks, Inc.
+ * Copyright 2022 VMware, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +15,20 @@
  */
 
 /*
- * Antonin Bas (antonin@barefootnetworks.com)
+ * Antonin Bas
  *
  */
 
 #include <bm/bm_sim/options_parse.h>
 #include <bm/bm_sim/target_parser.h>
+#include <bm/bm_grpc/pem.h>
 
+#include <exception>
+#include <fstream>
+#include <iostream>
+#include <memory>
+#include <sstream>
+#include <streambuf>
 #include <string>
 
 #include "switch_runner.h"
@@ -35,6 +43,21 @@ main(int argc, char* argv[]) {
   simple_switch_parser.add_string_option(
       "grpc-server-addr",
       "Bind gRPC server to given address [default is 0.0.0.0:9559]");
+  simple_switch_parser.add_flag_option(
+      "grpc-server-ssl",
+      "Enable SSL/TLS for gRPC server");
+  simple_switch_parser.add_string_option(
+      "grpc-server-cacert",
+      "Path to pem file holding CA certificate to verify peer against");
+  simple_switch_parser.add_string_option(
+      "grpc-server-cert",
+      "Path to pem file holding server certificate");
+  simple_switch_parser.add_string_option(
+      "grpc-server-key",
+      "Path to pem file holding server key");
+  simple_switch_parser.add_flag_option(
+      "grpc-server-with-client-auth",
+      "Require client to have a valid certificate for mutual authentication");
   simple_switch_parser.add_uint_option(
       "cpu-port",
       "Choose a numerical value for the CPU port, it will be used for "
@@ -55,6 +78,9 @@ main(int argc, char* argv[]) {
       "dp-grpc-server-addr",
       "Use a gRPC channel to inject and receive dataplane packets; "
       "bind this gRPC server to given address, e.g. 0.0.0.0:50052");
+  simple_switch_parser.add_uint_option(
+    "priority-queues",
+    "Number of priority queues (default is 1)");
 
   bm::OptionsParser parser;
   parser.parse(argc, argv, &simple_switch_parser);
@@ -85,6 +111,74 @@ main(int argc, char* argv[]) {
       std::exit(1);
   }
 
+  bool grpc_server_ssl = false;
+  {
+    auto rc = simple_switch_parser.get_flag_option(
+        "grpc-server-ssl", &grpc_server_ssl);
+    if (rc != bm::TargetParserBasic::ReturnCode::SUCCESS) std::exit(1);
+  }
+
+  std::string grpc_server_cacert;
+  {
+    auto rc = simple_switch_parser.get_string_option(
+        "grpc-server-cacert", &grpc_server_cacert);
+    if (rc == bm::TargetParserBasic::ReturnCode::OPTION_NOT_PROVIDED)
+      grpc_server_cacert = "";
+    else if (rc != bm::TargetParserBasic::ReturnCode::SUCCESS)
+      std::exit(1);
+  }
+
+  std::string grpc_server_cert;
+  {
+    auto rc = simple_switch_parser.get_string_option(
+        "grpc-server-cert", &grpc_server_cert);
+    if (rc == bm::TargetParserBasic::ReturnCode::OPTION_NOT_PROVIDED)
+      grpc_server_cert = "";
+    else if (rc != bm::TargetParserBasic::ReturnCode::SUCCESS)
+      std::exit(1);
+  }
+
+  std::string grpc_server_key;
+  {
+    auto rc = simple_switch_parser.get_string_option(
+        "grpc-server-key", &grpc_server_key);
+    if (rc == bm::TargetParserBasic::ReturnCode::OPTION_NOT_PROVIDED)
+      grpc_server_key = "";
+    else if (rc != bm::TargetParserBasic::ReturnCode::SUCCESS)
+      std::exit(1);
+  }
+
+  bool grpc_server_with_client_auth = false;
+  {
+    auto rc = simple_switch_parser.get_flag_option(
+        "grpc-server-with-client-auth", &grpc_server_with_client_auth);
+    if (rc != bm::TargetParserBasic::ReturnCode::SUCCESS) std::exit(1);
+  }
+
+  if (!grpc_server_ssl &&
+      (grpc_server_cacert != "" ||
+       grpc_server_cert != "" ||
+       grpc_server_key != "")) {
+    std::cerr << "SSL/TLS is disabled for gRPC server, "
+        << "so provided .pem files will be ignored\n";
+  }
+
+  if (!grpc_server_ssl && grpc_server_with_client_auth) {
+    std::cerr << "SSL/TLS is disabled for gRPC server, "
+        << "so cannot request client auth\n";
+  }
+
+  if (grpc_server_ssl && grpc_server_cert == "") {
+    std::cerr << "When enabling SSL/TLS for gRPC server, "
+        << "--grpc-server-cert is required\n";
+    std::exit(1);
+  }
+  if (grpc_server_ssl && grpc_server_key == "") {
+    std::cerr << "When enabling SSL/TLS for gRPC server, "
+        << "--grpc-server-key is required\n";
+    std::exit(1);
+  }
+
   uint32_t cpu_port = 0xffffffff;
   {
     auto rc = simple_switch_parser.get_uint_option("cpu-port", &cpu_port);
@@ -103,8 +197,44 @@ main(int argc, char* argv[]) {
       std::exit(1);
   }
 
+  auto ssl_options = std::make_shared<sswitch_grpc::SSLOptions>();
+  try {
+    if (grpc_server_ssl) {
+      if (grpc_server_cacert != "") {
+        ssl_options->pem_root_certs = bm::read_pem_file(grpc_server_cacert);
+      }
+      if (grpc_server_cert != "") {
+        ssl_options->pem_cert_chain = bm::read_pem_file(grpc_server_cert);
+      }
+      if (grpc_server_key != "") {
+        ssl_options->pem_private_key = bm::read_pem_file(grpc_server_key);
+      }
+      ssl_options->with_client_auth = grpc_server_with_client_auth;
+    }
+  } catch (const bm::read_pem_exception &e) {
+    std::cerr << e.msg();
+    std::exit(1);
+  }
+
+  uint32_t priority_queues = 0xffffffff;
+  {
+    auto rc = simple_switch_parser.get_uint_option("priority-queues",
+                                                   &priority_queues);
+    if (rc == bm::TargetParserBasic::ReturnCode::OPTION_NOT_PROVIDED)
+      priority_queues =
+          sswitch_grpc::SimpleSwitchGrpcRunner::default_nb_queues_per_port;
+    else if (rc != bm::TargetParserBasic::ReturnCode::SUCCESS)
+      std::exit(1);
+  }
+
   auto &runner = sswitch_grpc::SimpleSwitchGrpcRunner::get_instance(
-      !disable_swap_flag, grpc_server_addr, cpu_port, dp_grpc_server_addr);
+      !disable_swap_flag,
+      grpc_server_addr,
+      cpu_port,
+      dp_grpc_server_addr,
+      drop_port,
+      grpc_server_ssl ? ssl_options : nullptr,
+      priority_queues);
   int status = runner.init_and_start(parser);
   if (status != 0) std::exit(status);
 
